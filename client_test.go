@@ -36,6 +36,9 @@ func TestChatCreateSendsBearerJSONAndDecodesResponse(t *testing.T) {
 		if body.Model != "openai/gpt-4o-mini" {
 			t.Fatalf("model = %q", body.Model)
 		}
+		if body.Provider != "openai" {
+			t.Fatalf("provider = %q", body.Provider)
+		}
 		if len(body.Messages) != 1 || body.Messages[0].Role != RoleUser {
 			t.Fatalf("messages = %#v", body.Messages)
 		}
@@ -62,7 +65,8 @@ func TestChatCreateSendsBearerJSONAndDecodesResponse(t *testing.T) {
 	)
 
 	res, err := client.Chat.Create(context.Background(), ChatRequest{
-		Model: "openai/gpt-4o-mini",
+		Model:    "openai/gpt-4o-mini",
+		Provider: "openai",
 		Messages: []Message{{
 			Role:    RoleUser,
 			Content: "ping",
@@ -116,9 +120,14 @@ func TestModelsListBuildsFilters(t *testing.T) {
 		writeJSON(t, w, ModelsResponse{
 			Object: "list",
 			Data: []Model{{
-				ID:                  "openai/gpt-4o-mini",
-				Object:              "model",
-				OwnedBy:             "openai",
+				ID:      "openai/gpt-4o-mini",
+				Object:  "model",
+				OwnedBy: "openai",
+				Providers: []ModelProviderSummary{{
+					ID:     "openai",
+					Name:   "OpenAI",
+					Status: "active",
+				}},
 				DisplayName:         "GPT-4o mini",
 				Category:            "chat",
 				Modality:            "text",
@@ -146,6 +155,9 @@ func TestModelsListBuildsFilters(t *testing.T) {
 	}
 	if len(res.Data) != 1 || res.Data[0].ID != "openai/gpt-4o-mini" {
 		t.Fatalf("unexpected response: %#v", res)
+	}
+	if len(res.Data[0].Providers) != 1 || res.Data[0].Providers[0].ID != "openai" {
+		t.Fatalf("providers = %#v", res.Data[0].Providers)
 	}
 }
 

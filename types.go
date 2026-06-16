@@ -27,6 +27,7 @@ type Message struct {
 
 type ChatRequest struct {
 	Model          string           `json:"model"`
+	Provider       string           `json:"provider,omitempty"`
 	Messages       []Message        `json:"messages,omitempty"`
 	Temperature    *float64         `json:"temperature,omitempty"`
 	TopP           *float64         `json:"top_p,omitempty"`
@@ -78,29 +79,36 @@ type ModelsResponse struct {
 	Data   []Model `json:"data"`
 }
 
+type ModelProviderSummary struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
 type Model struct {
-	ID                  string   `json:"id"`
-	Object              string   `json:"object"`
-	OwnedBy             string   `json:"owned_by"`
-	DisplayName         string   `json:"display_name"`
-	Category            string   `json:"category"`
-	Subtype             string   `json:"subtype,omitempty"`
-	Modality            string   `json:"modality"`
-	Capabilities        []string `json:"capabilities"`
-	Tags                []string `json:"tags"`
-	InputModalities     []string `json:"input_modalities"`
-	OutputModalities    []string `json:"output_modalities"`
-	SupportedParameters []string `json:"supported_parameters"`
-	ExecutionMode       string   `json:"execution_mode"`
-	BillingUnit         string   `json:"billing_unit"`
-	BillingModelKey     string   `json:"billing_model_key,omitempty"`
-	ContextWindow       *int     `json:"context_window,omitempty"`
-	InputPricePer1M     float64  `json:"input_price_per_1m"`
-	OutputPricePer1M    float64  `json:"output_price_per_1m"`
-	DefaultTimeoutSecs  *int     `json:"default_timeout_seconds,omitempty"`
-	ProviderStatus      string   `json:"provider_status,omitempty"`
-	ProviderConfigured  bool     `json:"provider_configured"`
-	Routable            bool     `json:"routable"`
+	ID                  string                 `json:"id"`
+	Object              string                 `json:"object"`
+	OwnedBy             string                 `json:"owned_by"`
+	Providers           []ModelProviderSummary `json:"providers,omitempty"`
+	DisplayName         string                 `json:"display_name"`
+	Category            string                 `json:"category"`
+	Subtype             string                 `json:"subtype,omitempty"`
+	Modality            string                 `json:"modality"`
+	Capabilities        []string               `json:"capabilities"`
+	Tags                []string               `json:"tags"`
+	InputModalities     []string               `json:"input_modalities"`
+	OutputModalities    []string               `json:"output_modalities"`
+	SupportedParameters []string               `json:"supported_parameters"`
+	ExecutionMode       string                 `json:"execution_mode"`
+	BillingUnit         string                 `json:"billing_unit"`
+	BillingModelKey     string                 `json:"billing_model_key,omitempty"`
+	ContextWindow       *int                   `json:"context_window,omitempty"`
+	InputPricePer1M     float64                `json:"input_price_per_1m"`
+	OutputPricePer1M    float64                `json:"output_price_per_1m"`
+	DefaultTimeoutSecs  *int                   `json:"default_timeout_seconds,omitempty"`
+	ProviderStatus      string                 `json:"provider_status,omitempty"`
+	ProviderConfigured  bool                   `json:"provider_configured"`
+	Routable            bool                   `json:"routable"`
 }
 
 type EmbeddingsRequest struct {
