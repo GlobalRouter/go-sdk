@@ -76,6 +76,34 @@ func TestChatCreateSendsBearerJSONAndDecodesResponse(t *testing.T) {
 	}
 }
 
+func TestChatCreateDecodesBodyAfterHeadersFlush(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("response writer does not support flushing")
+		}
+		flusher.Flush()
+		time.Sleep(20 * time.Millisecond)
+		_, _ = io.WriteString(w, `{"id":"chatcmpl_delayed","model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"done"}}]}`)
+	}))
+	defer server.Close()
+
+	client := New(
+		WithBaseURL(server.URL),
+		WithTimeout(time.Second),
+		WithRetryConfig(RetryConfig{MaxRetries: 0}),
+	)
+	res, err := client.Chat.Create(context.Background(), ChatRequest{Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ID != "chatcmpl_delayed" || res.Choices[0].Message.Content != "done" {
+		t.Fatalf("unexpected response: %#v", res)
+	}
+}
+
 func TestModelsListBuildsFilters(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {
@@ -208,6 +236,41 @@ func TestChatStreamParsesServerSentEvents(t *testing.T) {
 	}
 	if _, err := stream.Next(); !errors.Is(err, io.EOF) {
 		t.Fatalf("second Next error = %v, want EOF", err)
+	}
+}
+
+func TestChatStreamReadsEventAfterSDKTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("response writer does not support flushing")
+		}
+		flusher.Flush()
+		time.Sleep(30 * time.Millisecond)
+		_, _ = io.WriteString(w, "data: {\"id\":\"chunk_delayed\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"later\"}}]}\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	client := New(
+		WithBaseURL(server.URL),
+		WithTimeout(5*time.Millisecond),
+		WithRetryConfig(RetryConfig{MaxRetries: 0}),
+	)
+	stream, err := client.Chat.Stream(context.Background(), ChatRequest{Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+
+	event, err := stream.Next()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Data.ID != "chunk_delayed" || event.Data.Choices[0].Delta.Content != "later" {
+		t.Fatalf("event = %#v", event)
 	}
 }
 

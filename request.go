@@ -40,6 +40,13 @@ type requestConfig struct {
 
 type RequestOption func(*requestConfig)
 
+type requestTimeoutMode int
+
+const (
+	requestTimeoutDisabled requestTimeoutMode = iota
+	requestTimeoutUntilBodyClosed
+)
+
 func WithIdempotencyKey(key string) RequestOption {
 	return WithHeader("Idempotency-Key", key)
 }
@@ -75,7 +82,7 @@ func (c *Client) doJSON(
 	out any,
 	opts ...RequestOption,
 ) error {
-	res, err := c.do(ctx, method, path, params, body, "application/json", opts...)
+	res, err := c.do(ctx, method, path, params, body, "application/json", requestTimeoutUntilBodyClosed, opts...)
 	if err != nil {
 		return err
 	}
@@ -98,7 +105,7 @@ func (c *Client) doStream(
 	body any,
 	opts ...RequestOption,
 ) (*http.Response, error) {
-	return c.do(ctx, method, path, params, body, "text/event-stream", opts...)
+	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutDisabled, opts...)
 }
 
 func (c *Client) do(
@@ -108,20 +115,12 @@ func (c *Client) do(
 	params url.Values,
 	body any,
 	accept string,
+	timeoutMode requestTimeoutMode,
 	opts ...RequestOption,
 ) (*http.Response, error) {
 	config := requestConfig{}
 	for _, opt := range opts {
 		opt(&config)
-	}
-	timeout := c.timeout
-	if config.timeout != nil {
-		timeout = *config.timeout
-	}
-	if timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
 	}
 
 	retryConfig := c.retry.withDefaults()
@@ -138,10 +137,27 @@ func (c *Client) do(
 		}
 	}
 
+	var cancel context.CancelFunc
+	if timeoutMode == requestTimeoutUntilBodyClosed {
+		timeout := c.timeout
+		if config.timeout != nil {
+			timeout = *config.timeout
+		}
+		if timeout > 0 {
+			ctx, cancel = context.WithTimeout(ctx, timeout)
+		}
+	}
+	cancelRequest := func() {
+		if cancel != nil {
+			cancel()
+		}
+	}
+
 	var lastErr error
 	for attempt := 0; attempt <= retryConfig.MaxRetries; attempt++ {
 		req, err := c.newRequest(ctx, method, path, params, bodyBytes, accept, config.headers)
 		if err != nil {
+			cancelRequest()
 			return nil, err
 		}
 		res, err := c.client.Do(req)
@@ -149,16 +165,19 @@ func (c *Client) do(
 			lastErr = err
 			if attempt < retryConfig.MaxRetries {
 				if sleepErr := sleepRetry(ctx, retryConfig, attempt); sleepErr != nil {
+					cancelRequest()
 					return nil, sleepErr
 				}
 				continue
 			}
+			cancelRequest()
 			return nil, fmt.Errorf("globalrouter: send request: %w", err)
 		}
 		if res.StatusCode >= 500 && attempt < retryConfig.MaxRetries {
 			_, _ = io.Copy(io.Discard, res.Body)
 			_ = res.Body.Close()
 			if sleepErr := sleepRetry(ctx, retryConfig, attempt); sleepErr != nil {
+				cancelRequest()
 				return nil, sleepErr
 			}
 			continue
@@ -166,14 +185,34 @@ func (c *Client) do(
 		if res.StatusCode >= 400 {
 			apiErr := parseAPIError(res)
 			_ = res.Body.Close()
+			cancelRequest()
 			return nil, apiErr
+		}
+		if cancel != nil {
+			if res.Body == nil {
+				cancelRequest()
+			} else {
+				res.Body = cancelOnCloseReadCloser{ReadCloser: res.Body, cancel: cancel}
+			}
 		}
 		return res, nil
 	}
+	cancelRequest()
 	if lastErr != nil {
 		return nil, fmt.Errorf("globalrouter: send request: %w", lastErr)
 	}
 	return nil, fmt.Errorf("globalrouter: request exhausted retries")
+}
+
+type cancelOnCloseReadCloser struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (r cancelOnCloseReadCloser) Close() error {
+	err := r.ReadCloser.Close()
+	r.cancel()
+	return err
 }
 
 func (c *Client) newRequest(
