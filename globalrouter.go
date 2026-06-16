@@ -51,7 +51,7 @@ func New(opts ...SDKOption) *Client {
 	}
 	c.baseURL = strings.TrimRight(c.baseURL, "/")
 	if c.client == nil {
-		c.client = &http.Client{Timeout: c.timeout}
+		c.client = &http.Client{}
 	}
 	c.Models = &ModelsResource{client: c}
 	c.Chat = &ChatResource{client: c}
