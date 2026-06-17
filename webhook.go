@@ -4,8 +4,12 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"strconv"
 	"strings"
+	"time"
 )
+
+const webhookTimestampTolerance = 5 * time.Minute
 
 func VerifyWebhookSignature(secret string, payload []byte, signature string) bool {
 	if strings.HasPrefix(signature, "sha256=") {
@@ -23,6 +27,15 @@ func VerifyWebhookSignature(secret string, payload []byte, signature string) boo
 	timestamp, okT := parts["t"]
 	provided, okV := parts["v1"]
 	if !okT || !okV {
+		return false
+	}
+	timestampSeconds, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return false
+	}
+	now := time.Now()
+	signedAt := time.Unix(timestampSeconds, 0)
+	if signedAt.Before(now.Add(-webhookTimestampTolerance)) || signedAt.After(now.Add(webhookTimestampTolerance)) {
 		return false
 	}
 	signedPayload := []byte(timestamp + ".")
