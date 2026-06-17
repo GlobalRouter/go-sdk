@@ -189,6 +189,25 @@ func TestAPIErrorParsesEnvelope(t *testing.T) {
 	}
 }
 
+func TestDefaultRetriesDoNotRepeatNonIdempotentPost(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusInternalServerError)
+		writeJSON(t, w, map[string]any{"error": map[string]any{"code": "UPSTREAM", "message": "try again"}})
+	}))
+	defer server.Close()
+
+	client := New(WithBaseURL(server.URL))
+	_, err := client.Chat.Create(context.Background(), ChatRequest{Model: "m"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
+	}
+}
+
 func TestRetryRetriesServerErrorsOnly(t *testing.T) {
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

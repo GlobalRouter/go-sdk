@@ -24,6 +24,7 @@ type Client struct {
 	client    HTTPClient
 	timeout   time.Duration
 	retry     RetryConfig
+	retrySet  bool
 	userAgent string
 
 	Models     *ModelsResource
@@ -91,6 +92,7 @@ func WithTimeout(timeout time.Duration) SDKOption {
 func WithRetryConfig(config RetryConfig) SDKOption {
 	return func(c *Client) {
 		c.retry = config.withDefaults()
+		c.retrySet = true
 	}
 }
 

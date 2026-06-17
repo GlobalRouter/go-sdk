@@ -126,6 +126,8 @@ func (c *Client) do(
 	retryConfig := c.retry.withDefaults()
 	if config.retry != nil {
 		retryConfig = config.retry.withDefaults()
+	} else if !c.retrySet && !isDefaultRetryAllowed(method, config.headers) {
+		retryConfig.MaxRetries = 0
 	}
 
 	var bodyBytes []byte
@@ -274,6 +276,23 @@ func sleepRetry(ctx context.Context, config RetryConfig, attempt int) error {
 	case <-timer.C:
 		return nil
 	}
+}
+
+func isDefaultRetryAllowed(method string, headers map[string]string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete, http.MethodOptions, http.MethodTrace:
+		return true
+	}
+	return hasIdempotencyKey(headers)
+}
+
+func hasIdempotencyKey(headers map[string]string) bool {
+	for name, value := range headers {
+		if strings.EqualFold(name, "Idempotency-Key") && value != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func addString(values url.Values, key string, value string) {
