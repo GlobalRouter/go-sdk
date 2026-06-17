@@ -32,7 +32,6 @@ func parseAPIError(res *http.Response) *APIError {
 	errOut := &APIError{
 		StatusCode: res.StatusCode,
 		Code:       "ROUTER_SDK_HTTP_ERROR",
-		Message:    http.StatusText(res.StatusCode),
 		Type:       "router_error",
 		Body:       string(raw),
 		Response:   res,
@@ -59,6 +58,9 @@ func parseAPIError(res *http.Response) *APIError {
 	}
 	if errOut.Message == "" {
 		errOut.Message = string(raw)
+	}
+	if errOut.Message == "" {
+		errOut.Message = http.StatusText(res.StatusCode)
 	}
 	return errOut
 }

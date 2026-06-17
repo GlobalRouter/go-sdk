@@ -189,6 +189,26 @@ func TestAPIErrorParsesEnvelope(t *testing.T) {
 	}
 }
 
+func TestAPIErrorUsesPlainBodyMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "invalid model", http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	client := New(WithBaseURL(server.URL), WithRetryConfig(RetryConfig{MaxRetries: 0}))
+	_, err := client.Chat.Create(context.Background(), ChatRequest{Model: "m"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error type = %T", err)
+	}
+	if apiErr.Message != "invalid model\n" {
+		t.Fatalf("message = %q", apiErr.Message)
+	}
+}
+
 func TestRetryRetriesServerErrorsOnly(t *testing.T) {
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
