@@ -44,6 +44,7 @@ type requestTimeoutMode int
 
 const (
 	requestTimeoutDisabled requestTimeoutMode = iota
+	requestTimeoutUntilResponse
 	requestTimeoutUntilBodyClosed
 )
 
@@ -105,7 +106,7 @@ func (c *Client) doStream(
 	body any,
 	opts ...RequestOption,
 ) (*http.Response, error) {
-	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutDisabled, opts...)
+	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutUntilResponse, opts...)
 }
 
 func (c *Client) do(
@@ -138,18 +139,39 @@ func (c *Client) do(
 	}
 
 	var cancel context.CancelFunc
-	if timeoutMode == requestTimeoutUntilBodyClosed {
+	var timeoutTimer *time.Timer
+	if timeoutMode != requestTimeoutDisabled {
 		timeout := c.timeout
 		if config.timeout != nil {
 			timeout = *config.timeout
 		}
 		if timeout > 0 {
-			ctx, cancel = context.WithTimeout(ctx, timeout)
+			if timeoutMode == requestTimeoutUntilBodyClosed {
+				ctx, cancel = context.WithTimeout(ctx, timeout)
+			} else {
+				ctx, cancel = context.WithCancel(ctx)
+				timeoutTimer = time.AfterFunc(timeout, cancel)
+			}
 		}
 	}
 	cancelRequest := func() {
+		if timeoutTimer != nil {
+			timeoutTimer.Stop()
+		}
 		if cancel != nil {
 			cancel()
+		}
+	}
+	keepResponseBody := func(res *http.Response) {
+		if timeoutTimer != nil {
+			timeoutTimer.Stop()
+		}
+		if cancel != nil {
+			if res.Body == nil {
+				cancelRequest()
+			} else {
+				res.Body = cancelOnCloseReadCloser{ReadCloser: res.Body, cancel: cancelRequest}
+			}
 		}
 	}
 
@@ -188,13 +210,7 @@ func (c *Client) do(
 			cancelRequest()
 			return nil, apiErr
 		}
-		if cancel != nil {
-			if res.Body == nil {
-				cancelRequest()
-			} else {
-				res.Body = cancelOnCloseReadCloser{ReadCloser: res.Body, cancel: cancel}
-			}
-		}
+		keepResponseBody(res)
 		return res, nil
 	}
 	cancelRequest()
