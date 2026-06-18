@@ -44,12 +44,15 @@ func (s *SSEStream[T]) Next() (StreamEvent[T], error) {
 				s.event = ""
 				continue
 			}
-			event, err := s.dispatch()
+			event, produced, err := s.dispatch()
 			if err == io.EOF {
 				s.done = true
 			}
 			if err != nil {
 				return zero, err
+			}
+			if !produced {
+				continue
 			}
 			return event, nil
 		}
@@ -73,12 +76,14 @@ func (s *SSEStream[T]) Next() (StreamEvent[T], error) {
 		return zero, err
 	}
 	if len(s.data) > 0 {
-		event, err := s.dispatch()
+		event, produced, err := s.dispatch()
 		if err != nil {
 			s.done = true
 			return zero, err
 		}
-		return event, nil
+		if produced {
+			return event, nil
+		}
 	}
 	s.done = true
 	return zero, io.EOF
@@ -92,22 +97,22 @@ func (s *SSEStream[T]) Close() error {
 	return s.response.Body.Close()
 }
 
-func (s *SSEStream[T]) dispatch() (StreamEvent[T], error) {
+func (s *SSEStream[T]) dispatch() (StreamEvent[T], bool, error) {
 	var zero StreamEvent[T]
 	payload := strings.Join(s.data, "\n")
 	eventName := s.event
 	s.event = ""
 	s.data = nil
 	if payload == "" {
-		return zero, nil
+		return zero, false, nil
 	}
 	if payload == "[DONE]" {
-		return zero, io.EOF
+		return zero, false, io.EOF
 	}
 	var data T
 	decoder := json.NewDecoder(bytes.NewBufferString(payload))
 	if err := decoder.Decode(&data); err != nil {
-		return zero, err
+		return zero, false, err
 	}
-	return StreamEvent[T]{Event: eventName, Data: data}, nil
+	return StreamEvent[T]{Event: eventName, Data: data}, true, nil
 }
