@@ -20,6 +20,9 @@ type RetryConfig struct {
 }
 
 func (r RetryConfig) withDefaults() RetryConfig {
+	if r.MaxRetries < 0 {
+		r.MaxRetries = 0
+	}
 	if r.MinDelay <= 0 {
 		r.MinDelay = 250 * time.Millisecond
 	}

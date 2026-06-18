@@ -214,6 +214,52 @@ func TestRetryRetriesServerErrorsOnly(t *testing.T) {
 	}
 }
 
+func TestNegativeRetriesStillSendInitialRequest(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		call func(*Client) error
+	}{
+		{
+			name: "client config",
+			call: func(client *Client) error {
+				_, err := client.Chat.Create(context.Background(), ChatRequest{Model: "m"})
+				return err
+			},
+		},
+		{
+			name: "request config",
+			call: func(client *Client) error {
+				_, err := client.Chat.Create(
+					context.Background(),
+					ChatRequest{Model: "m"},
+					WithRequestRetries(RetryConfig{MaxRetries: -1}),
+				)
+				return err
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			attempts := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				attempts++
+				writeJSON(t, w, ChatResponse{ID: "ok", Model: "m", Choices: []ChatChoice{{Index: 0}}})
+			}))
+			defer server.Close()
+
+			client := New(
+				WithBaseURL(server.URL),
+				WithRetryConfig(RetryConfig{MaxRetries: -1}),
+			)
+			if err := tc.call(client); err != nil {
+				t.Fatal(err)
+			}
+			if attempts != 1 {
+				t.Fatalf("attempts = %d, want 1", attempts)
+			}
+		})
+	}
+}
+
 func TestChatStreamParsesServerSentEvents(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {
