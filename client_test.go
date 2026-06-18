@@ -189,10 +189,13 @@ func TestAPIErrorParsesEnvelope(t *testing.T) {
 	}
 }
 
-func TestRetryRetriesServerErrorsOnly(t *testing.T) {
+func TestRetryRetriesPostServerErrorsWithIdempotencyKey(t *testing.T) {
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempts++
+		if got := r.Header.Get("Idempotency-Key"); got != "idem_1" {
+			t.Fatalf("idempotency key = %q", got)
+		}
 		if attempts == 1 {
 			w.WriteHeader(http.StatusInternalServerError)
 			writeJSON(t, w, map[string]any{"error": map[string]any{"code": "UPSTREAM", "message": "try again"}})
@@ -206,11 +209,32 @@ func TestRetryRetriesServerErrorsOnly(t *testing.T) {
 		WithBaseURL(server.URL),
 		WithRetryConfig(RetryConfig{MaxRetries: 1, MinDelay: time.Millisecond}),
 	)
-	if _, err := client.Chat.Create(context.Background(), ChatRequest{Model: "m"}); err != nil {
+	if _, err := client.Chat.Create(context.Background(), ChatRequest{Model: "m"}, WithIdempotencyKey("idem_1")); err != nil {
 		t.Fatal(err)
 	}
 	if attempts != 2 {
 		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
+func TestRetryDoesNotRetryPostServerErrorsWithoutIdempotencyKey(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusInternalServerError)
+		writeJSON(t, w, map[string]any{"error": map[string]any{"code": "UPSTREAM", "message": "try again"}})
+	}))
+	defer server.Close()
+
+	client := New(
+		WithBaseURL(server.URL),
+		WithRetryConfig(RetryConfig{MaxRetries: 1, MinDelay: time.Millisecond}),
+	)
+	if _, err := client.Chat.Create(context.Background(), ChatRequest{Model: "m"}); err == nil {
+		t.Fatal("expected error")
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
 	}
 }
 
