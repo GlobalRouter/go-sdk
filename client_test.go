@@ -189,16 +189,19 @@ func TestAPIErrorParsesEnvelope(t *testing.T) {
 	}
 }
 
-func TestRetryRetriesServerErrorsOnly(t *testing.T) {
+func TestRetryRetriesIdempotentServerErrors(t *testing.T) {
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempts++
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
 		if attempts == 1 {
 			w.WriteHeader(http.StatusInternalServerError)
 			writeJSON(t, w, map[string]any{"error": map[string]any{"code": "UPSTREAM", "message": "try again"}})
 			return
 		}
-		writeJSON(t, w, ChatResponse{ID: "ok", Model: "m", Choices: []ChatChoice{{Index: 0}}})
+		writeJSON(t, w, ModelsResponse{Data: []Model{}})
 	}))
 	defer server.Close()
 
@@ -206,7 +209,75 @@ func TestRetryRetriesServerErrorsOnly(t *testing.T) {
 		WithBaseURL(server.URL),
 		WithRetryConfig(RetryConfig{MaxRetries: 1, MinDelay: time.Millisecond}),
 	)
-	if _, err := client.Chat.Create(context.Background(), ChatRequest{Model: "m"}); err != nil {
+	if _, err := client.Models.List(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
+func TestRetryDoesNotRetryUnsafePostWithoutIdempotencyKey(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/tasks" {
+			t.Fatalf("request = %s %s, want POST /v1/tasks", r.Method, r.URL.Path)
+		}
+		if attempts == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			writeJSON(t, w, map[string]any{"error": map[string]any{"code": "UPSTREAM", "message": "try again"}})
+			return
+		}
+		writeJSON(t, w, TaskResponse{ID: "task_1", Object: "task", Status: TaskStatusQueued})
+	}))
+	defer server.Close()
+
+	client := New(
+		WithBaseURL(server.URL),
+		WithRetryConfig(RetryConfig{MaxRetries: 1, MinDelay: time.Millisecond}),
+	)
+	_, err := client.Tasks.Create(context.Background(), TaskCreateRequest{
+		Type:  TaskTypeVideoGeneration,
+		Model: "m",
+		Input: map[string]any{"prompt": "x"},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
+	}
+}
+
+func TestRetryRetriesUnsafePostWithIdempotencyKey(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/tasks" {
+			t.Fatalf("request = %s %s, want POST /v1/tasks", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Idempotency-Key") != "idem_1" {
+			t.Fatalf("idempotency key = %q, want idem_1", r.Header.Get("Idempotency-Key"))
+		}
+		if attempts == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			writeJSON(t, w, map[string]any{"error": map[string]any{"code": "UPSTREAM", "message": "try again"}})
+			return
+		}
+		writeJSON(t, w, TaskResponse{ID: "task_1", Object: "task", Status: TaskStatusQueued})
+	}))
+	defer server.Close()
+
+	client := New(
+		WithBaseURL(server.URL),
+		WithRetryConfig(RetryConfig{MaxRetries: 1, MinDelay: time.Millisecond}),
+	)
+	if _, err := client.Tasks.Create(context.Background(), TaskCreateRequest{
+		Type:  TaskTypeVideoGeneration,
+		Model: "m",
+		Input: map[string]any{"prompt": "x"},
+	}, WithIdempotencyKey("idem_1")); err != nil {
 		t.Fatal(err)
 	}
 	if attempts != 2 {
