@@ -44,6 +44,7 @@ type requestTimeoutMode int
 
 const (
 	requestTimeoutDisabled requestTimeoutMode = iota
+	requestTimeoutUntilHeaders
 	requestTimeoutUntilBodyClosed
 )
 
@@ -105,7 +106,7 @@ func (c *Client) doStream(
 	body any,
 	opts ...RequestOption,
 ) (*http.Response, error) {
-	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutDisabled, opts...)
+	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutUntilHeaders, opts...)
 }
 
 func (c *Client) do(
@@ -137,14 +138,19 @@ func (c *Client) do(
 		}
 	}
 
+	requestCtx := ctx
+	timeoutCtx := ctx
 	var cancel context.CancelFunc
-	if timeoutMode == requestTimeoutUntilBodyClosed {
+	if timeoutMode != requestTimeoutDisabled {
 		timeout := c.timeout
 		if config.timeout != nil {
 			timeout = *config.timeout
 		}
 		if timeout > 0 {
-			ctx, cancel = context.WithTimeout(ctx, timeout)
+			timeoutCtx, cancel = context.WithTimeout(ctx, timeout)
+			if timeoutMode == requestTimeoutUntilBodyClosed {
+				requestCtx = timeoutCtx
+			}
 		}
 	}
 	cancelRequest := func() {
@@ -155,16 +161,39 @@ func (c *Client) do(
 
 	var lastErr error
 	for attempt := 0; attempt <= retryConfig.MaxRetries; attempt++ {
-		req, err := c.newRequest(ctx, method, path, params, bodyBytes, accept, config.headers)
+		attemptCtx := requestCtx
+		var cancelAttempt context.CancelFunc
+		var stopTimeoutBeforeHeaders func()
+		if timeoutMode == requestTimeoutUntilHeaders && cancel != nil {
+			attemptCtx, cancelAttempt = context.WithCancel(ctx)
+			stopTimeoutBeforeHeaders = cancelWhenDone(timeoutCtx, cancelAttempt)
+		}
+
+		req, err := c.newRequest(attemptCtx, method, path, params, bodyBytes, accept, config.headers)
 		if err != nil {
+			if stopTimeoutBeforeHeaders != nil {
+				stopTimeoutBeforeHeaders()
+			}
+			if cancelAttempt != nil {
+				cancelAttempt()
+			}
 			cancelRequest()
 			return nil, err
 		}
 		res, err := c.client.Do(req)
+		if stopTimeoutBeforeHeaders != nil {
+			stopTimeoutBeforeHeaders()
+		}
 		if err != nil {
+			if cancelAttempt != nil {
+				cancelAttempt()
+			}
+			if timeoutMode == requestTimeoutUntilHeaders && timeoutCtx.Err() != nil {
+				err = timeoutCtx.Err()
+			}
 			lastErr = err
 			if attempt < retryConfig.MaxRetries {
-				if sleepErr := sleepRetry(ctx, retryConfig, attempt); sleepErr != nil {
+				if sleepErr := sleepRetry(timeoutCtx, retryConfig, attempt); sleepErr != nil {
 					cancelRequest()
 					return nil, sleepErr
 				}
@@ -176,7 +205,10 @@ func (c *Client) do(
 		if res.StatusCode >= 500 && attempt < retryConfig.MaxRetries {
 			_, _ = io.Copy(io.Discard, res.Body)
 			_ = res.Body.Close()
-			if sleepErr := sleepRetry(ctx, retryConfig, attempt); sleepErr != nil {
+			if cancelAttempt != nil {
+				cancelAttempt()
+			}
+			if sleepErr := sleepRetry(timeoutCtx, retryConfig, attempt); sleepErr != nil {
 				cancelRequest()
 				return nil, sleepErr
 			}
@@ -185,15 +217,27 @@ func (c *Client) do(
 		if res.StatusCode >= 400 {
 			apiErr := parseAPIError(res)
 			_ = res.Body.Close()
+			if cancelAttempt != nil {
+				cancelAttempt()
+			}
 			cancelRequest()
 			return nil, apiErr
 		}
-		if cancel != nil {
+		if timeoutMode == requestTimeoutUntilBodyClosed && cancel != nil {
 			if res.Body == nil {
 				cancelRequest()
 			} else {
 				res.Body = cancelOnCloseReadCloser{ReadCloser: res.Body, cancel: cancel}
 			}
+		} else {
+			if cancelAttempt != nil {
+				if res.Body == nil {
+					cancelAttempt()
+				} else {
+					res.Body = cancelOnCloseReadCloser{ReadCloser: res.Body, cancel: cancelAttempt}
+				}
+			}
+			cancelRequest()
 		}
 		return res, nil
 	}
@@ -202,6 +246,23 @@ func (c *Client) do(
 		return nil, fmt.Errorf("globalrouter: send request: %w", lastErr)
 	}
 	return nil, fmt.Errorf("globalrouter: request exhausted retries")
+}
+
+func cancelWhenDone(ctx context.Context, cancel context.CancelFunc) func() {
+	done := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		select {
+		case <-ctx.Done():
+			cancel()
+		case <-done:
+		}
+	}()
+	return func() {
+		close(done)
+		<-stopped
+	}
 }
 
 type cancelOnCloseReadCloser struct {

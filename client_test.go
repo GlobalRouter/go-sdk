@@ -286,6 +286,30 @@ func TestChatStreamReadsEventAfterSDKTimeout(t *testing.T) {
 	}
 }
 
+func TestChatStreamTimesOutBeforeHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+	}))
+	defer server.Close()
+
+	client := New(
+		WithBaseURL(server.URL),
+		WithTimeout(10*time.Millisecond),
+		WithRetryConfig(RetryConfig{MaxRetries: 0}),
+	)
+	start := time.Now()
+	stream, err := client.Chat.Stream(context.Background(), ChatRequest{Model: "m"})
+	if stream != nil {
+		defer stream.Close()
+	}
+	if err == nil {
+		t.Fatal("expected stream request to time out before headers")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("stream request took %s, want timeout before headers", elapsed)
+	}
+}
+
 func TestTaskEventsPreserveEventNames(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/tasks/task_123/events" {
