@@ -45,6 +45,7 @@ type requestTimeoutMode int
 const (
 	requestTimeoutDisabled requestTimeoutMode = iota
 	requestTimeoutUntilBodyClosed
+	requestTimeoutUntilResponseHeaders
 )
 
 func WithIdempotencyKey(key string) RequestOption {
@@ -105,7 +106,7 @@ func (c *Client) doStream(
 	body any,
 	opts ...RequestOption,
 ) (*http.Response, error) {
-	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutDisabled, opts...)
+	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutUntilResponseHeaders, opts...)
 }
 
 func (c *Client) do(
@@ -137,34 +138,51 @@ func (c *Client) do(
 		}
 	}
 
-	var cancel context.CancelFunc
-	if timeoutMode == requestTimeoutUntilBodyClosed {
+	requestCtx := ctx
+	timeoutCtx := ctx
+	var cancelRequestContext context.CancelFunc
+	var cancelHeaderTimeout context.CancelFunc
+	if timeoutMode == requestTimeoutUntilBodyClosed || timeoutMode == requestTimeoutUntilResponseHeaders {
 		timeout := c.timeout
 		if config.timeout != nil {
 			timeout = *config.timeout
 		}
 		if timeout > 0 {
-			ctx, cancel = context.WithTimeout(ctx, timeout)
+			if timeoutMode == requestTimeoutUntilResponseHeaders {
+				timeoutCtx, cancelHeaderTimeout = context.WithTimeout(ctx, timeout)
+				requestCtx, cancelRequestContext = context.WithCancel(ctx)
+			} else {
+				requestCtx, cancelRequestContext = context.WithTimeout(ctx, timeout)
+				timeoutCtx = requestCtx
+			}
 		}
 	}
 	cancelRequest := func() {
-		if cancel != nil {
-			cancel()
+		if cancelHeaderTimeout != nil {
+			cancelHeaderTimeout()
+		}
+		if cancelRequestContext != nil {
+			cancelRequestContext()
 		}
 	}
 
 	var lastErr error
 	for attempt := 0; attempt <= retryConfig.MaxRetries; attempt++ {
-		req, err := c.newRequest(ctx, method, path, params, bodyBytes, accept, config.headers)
+		req, err := c.newRequest(requestCtx, method, path, params, bodyBytes, accept, config.headers)
 		if err != nil {
 			cancelRequest()
 			return nil, err
 		}
-		res, err := c.client.Do(req)
+		var res *http.Response
+		if timeoutMode == requestTimeoutUntilResponseHeaders && cancelHeaderTimeout != nil {
+			res, err = c.doUntilResponseHeaders(timeoutCtx, cancelRequestContext, req)
+		} else {
+			res, err = c.client.Do(req)
+		}
 		if err != nil {
 			lastErr = err
 			if attempt < retryConfig.MaxRetries {
-				if sleepErr := sleepRetry(ctx, retryConfig, attempt); sleepErr != nil {
+				if sleepErr := sleepRetry(timeoutCtx, retryConfig, attempt); sleepErr != nil {
 					cancelRequest()
 					return nil, sleepErr
 				}
@@ -176,7 +194,7 @@ func (c *Client) do(
 		if res.StatusCode >= 500 && attempt < retryConfig.MaxRetries {
 			_, _ = io.Copy(io.Discard, res.Body)
 			_ = res.Body.Close()
-			if sleepErr := sleepRetry(ctx, retryConfig, attempt); sleepErr != nil {
+			if sleepErr := sleepRetry(timeoutCtx, retryConfig, attempt); sleepErr != nil {
 				cancelRequest()
 				return nil, sleepErr
 			}
@@ -188,11 +206,14 @@ func (c *Client) do(
 			cancelRequest()
 			return nil, apiErr
 		}
-		if cancel != nil {
+		if cancelHeaderTimeout != nil {
+			cancelHeaderTimeout()
+		}
+		if cancelRequestContext != nil {
 			if res.Body == nil {
 				cancelRequest()
 			} else {
-				res.Body = cancelOnCloseReadCloser{ReadCloser: res.Body, cancel: cancel}
+				res.Body = cancelOnCloseReadCloser{ReadCloser: res.Body, cancel: cancelRequestContext}
 			}
 		}
 		return res, nil
@@ -202,6 +223,40 @@ func (c *Client) do(
 		return nil, fmt.Errorf("globalrouter: send request: %w", lastErr)
 	}
 	return nil, fmt.Errorf("globalrouter: request exhausted retries")
+}
+
+type doResult struct {
+	res *http.Response
+	err error
+}
+
+func (c *Client) doUntilResponseHeaders(ctx context.Context, cancelRequest context.CancelFunc, req *http.Request) (*http.Response, error) {
+	resultCh := make(chan doResult)
+	timedOut := make(chan struct{})
+	go func() {
+		res, err := c.client.Do(req)
+		select {
+		case resultCh <- doResult{res: res, err: err}:
+		case <-timedOut:
+			if res != nil && res.Body != nil {
+				_ = res.Body.Close()
+			}
+		}
+	}()
+
+	select {
+	case result := <-resultCh:
+		return result.res, result.err
+	case <-ctx.Done():
+		select {
+		case result := <-resultCh:
+			return result.res, result.err
+		default:
+		}
+		close(timedOut)
+		cancelRequest()
+		return nil, ctx.Err()
+	}
 }
 
 type cancelOnCloseReadCloser struct {
