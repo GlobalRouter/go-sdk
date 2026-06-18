@@ -15,8 +15,11 @@ func VerifyWebhookSignature(secret string, payload []byte, signature string) boo
 	}
 	parts := map[string]string{}
 	for _, item := range strings.Split(signature, ",") {
+		item = strings.TrimSpace(item)
 		key, value, ok := strings.Cut(item, "=")
 		if ok {
+			key = strings.TrimSpace(key)
+			value = strings.TrimSpace(value)
 			parts[key] = value
 		}
 	}
