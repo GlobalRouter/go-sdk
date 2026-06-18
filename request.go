@@ -127,6 +127,7 @@ func (c *Client) do(
 	if config.retry != nil {
 		retryConfig = config.retry.withDefaults()
 	}
+	retryable := canRetryRequest(method, config.headers)
 
 	var bodyBytes []byte
 	var err error
@@ -163,7 +164,7 @@ func (c *Client) do(
 		res, err := c.client.Do(req)
 		if err != nil {
 			lastErr = err
-			if attempt < retryConfig.MaxRetries {
+			if retryable && attempt < retryConfig.MaxRetries {
 				if sleepErr := sleepRetry(ctx, retryConfig, attempt); sleepErr != nil {
 					cancelRequest()
 					return nil, sleepErr
@@ -173,7 +174,7 @@ func (c *Client) do(
 			cancelRequest()
 			return nil, fmt.Errorf("globalrouter: send request: %w", err)
 		}
-		if res.StatusCode >= 500 && attempt < retryConfig.MaxRetries {
+		if retryable && res.StatusCode >= 500 && attempt < retryConfig.MaxRetries {
 			_, _ = io.Copy(io.Discard, res.Body)
 			_ = res.Body.Close()
 			if sleepErr := sleepRetry(ctx, retryConfig, attempt); sleepErr != nil {
@@ -255,6 +256,26 @@ func (c *Client) newRequest(
 		req.Header.Set(k, v)
 	}
 	return req, nil
+}
+
+func canRetryRequest(method string, headers map[string]string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace, http.MethodPut, http.MethodDelete:
+		return true
+	case http.MethodPost:
+		return hasNonEmptyHeader(headers, "Idempotency-Key")
+	default:
+		return false
+	}
+}
+
+func hasNonEmptyHeader(headers map[string]string, name string) bool {
+	for k, v := range headers {
+		if strings.EqualFold(k, name) && strings.TrimSpace(v) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func sleepRetry(ctx context.Context, config RetryConfig, attempt int) error {
