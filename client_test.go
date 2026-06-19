@@ -286,6 +286,36 @@ func TestChatStreamReadsEventAfterSDKTimeout(t *testing.T) {
 	}
 }
 
+func TestChatStreamAppliesRequestTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("response writer does not support flushing")
+		}
+		flusher.Flush()
+		time.Sleep(30 * time.Millisecond)
+		_, _ = io.WriteString(w, "data: {\"id\":\"chunk_delayed\",\"model\":\"m\"}\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	client := New(
+		WithBaseURL(server.URL),
+		WithRetryConfig(RetryConfig{MaxRetries: 0}),
+	)
+	stream, err := client.Chat.Stream(context.Background(), ChatRequest{Model: "m"}, WithRequestTimeout(5*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+
+	if _, err := stream.Next(); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Next error = %v, want context deadline exceeded", err)
+	}
+}
+
 func TestTaskEventsPreserveEventNames(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/tasks/task_123/events" {

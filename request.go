@@ -44,6 +44,7 @@ type requestTimeoutMode int
 
 const (
 	requestTimeoutDisabled requestTimeoutMode = iota
+	requestTimeoutExplicitOnly
 	requestTimeoutUntilBodyClosed
 )
 
@@ -105,7 +106,7 @@ func (c *Client) doStream(
 	body any,
 	opts ...RequestOption,
 ) (*http.Response, error) {
-	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutDisabled, opts...)
+	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutExplicitOnly, opts...)
 }
 
 func (c *Client) do(
@@ -138,14 +139,20 @@ func (c *Client) do(
 	}
 
 	var cancel context.CancelFunc
-	if timeoutMode == requestTimeoutUntilBodyClosed {
-		timeout := c.timeout
+	var timeout time.Duration
+	switch timeoutMode {
+	case requestTimeoutUntilBodyClosed:
+		timeout = c.timeout
 		if config.timeout != nil {
 			timeout = *config.timeout
 		}
-		if timeout > 0 {
-			ctx, cancel = context.WithTimeout(ctx, timeout)
+	case requestTimeoutExplicitOnly:
+		if config.timeout != nil {
+			timeout = *config.timeout
 		}
+	}
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, timeout)
 	}
 	cancelRequest := func() {
 		if cancel != nil {
