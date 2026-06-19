@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 )
+
+var errEmptySSEData = errors.New("empty sse data")
 
 type StreamEvent[T any] struct {
 	Event string
@@ -45,6 +48,9 @@ func (s *SSEStream[T]) Next() (StreamEvent[T], error) {
 				continue
 			}
 			event, err := s.dispatch()
+			if errors.Is(err, errEmptySSEData) {
+				continue
+			}
 			if err == io.EOF {
 				s.done = true
 			}
@@ -74,6 +80,10 @@ func (s *SSEStream[T]) Next() (StreamEvent[T], error) {
 	}
 	if len(s.data) > 0 {
 		event, err := s.dispatch()
+		if errors.Is(err, errEmptySSEData) {
+			s.done = true
+			return zero, io.EOF
+		}
 		if err != nil {
 			s.done = true
 			return zero, err
@@ -99,7 +109,7 @@ func (s *SSEStream[T]) dispatch() (StreamEvent[T], error) {
 	s.event = ""
 	s.data = nil
 	if payload == "" {
-		return zero, nil
+		return zero, errEmptySSEData
 	}
 	if payload == "[DONE]" {
 		return zero, io.EOF
