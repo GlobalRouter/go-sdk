@@ -251,7 +251,7 @@ func TestChatStreamParsesServerSentEvents(t *testing.T) {
 	}
 }
 
-func TestChatStreamReadsEventAfterSDKTimeout(t *testing.T) {
+func TestChatStreamUsesSDKTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
@@ -277,12 +277,8 @@ func TestChatStreamReadsEventAfterSDKTimeout(t *testing.T) {
 	}
 	defer stream.Close()
 
-	event, err := stream.Next()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if event.Data.ID != "chunk_delayed" || event.Data.Choices[0].Delta.Content != "later" {
-		t.Fatalf("event = %#v", event)
+	if _, err := stream.Next(); err == nil {
+		t.Fatal("expected stream read to fail after SDK timeout")
 	}
 }
 
