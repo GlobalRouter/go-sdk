@@ -189,6 +189,30 @@ func TestAPIErrorParsesEnvelope(t *testing.T) {
 	}
 }
 
+func TestAPIErrorUsesNonEnvelopeBodyAsMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = io.WriteString(w, `{"message":"provider overloaded"}`)
+	}))
+	defer server.Close()
+
+	client := New(WithBaseURL(server.URL), WithRetryConfig(RetryConfig{MaxRetries: 0}))
+	_, err := client.Chat.Create(context.Background(), ChatRequest{Model: "m"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error type = %T", err)
+	}
+	if apiErr.Message != `{"message":"provider overloaded"}` {
+		t.Fatalf("message = %q", apiErr.Message)
+	}
+	if apiErr.Body != apiErr.Message {
+		t.Fatalf("body = %q, message = %q", apiErr.Body, apiErr.Message)
+	}
+}
+
 func TestRetryRetriesServerErrorsOnly(t *testing.T) {
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
