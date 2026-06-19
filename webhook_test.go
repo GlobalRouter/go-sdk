@@ -10,6 +10,9 @@ func TestVerifyWebhookSignature(t *testing.T) {
 	if !VerifyWebhookSignature("secret", payload, "t=1780880000,v1=fac3b9ecc70114089dcadb0e6bd74c4fbab6d614a1a1f07cb2e3f1238123c275") {
 		t.Fatal("timestamped signature should verify")
 	}
+	if !VerifyWebhookSignature("secret", payload, "t=1780880000, v1=fac3b9ecc70114089dcadb0e6bd74c4fbab6d614a1a1f07cb2e3f1238123c275") {
+		t.Fatal("timestamped signature with comma-space should verify")
+	}
 	if VerifyWebhookSignature("secret", payload, "sha256=bad") {
 		t.Fatal("bad signature should not verify")
 	}
