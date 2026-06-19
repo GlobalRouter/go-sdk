@@ -251,6 +251,32 @@ func TestChatStreamParsesServerSentEvents(t *testing.T) {
 	}
 }
 
+func TestChatStreamEmptyDataReturnsZeroEvent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "event: ping\ndata:\n\n")
+	}))
+	defer server.Close()
+
+	client := New(WithBaseURL(server.URL))
+	stream, err := client.Chat.Stream(context.Background(), ChatRequest{Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+
+	event, err := stream.Next()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Event != "ping" {
+		t.Fatalf("event name = %q, want ping", event.Event)
+	}
+	if event.Data.ID != "" || event.Data.Model != "" || len(event.Data.Choices) != 0 {
+		t.Fatalf("event data = %#v, want zero ChatResponse", event.Data)
+	}
+}
+
 func TestChatStreamReadsEventAfterSDKTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

@@ -99,7 +99,7 @@ func (s *SSEStream[T]) dispatch() (StreamEvent[T], error) {
 	s.event = ""
 	s.data = nil
 	if payload == "" {
-		return zero, nil
+		return StreamEvent[T]{Event: eventName}, nil
 	}
 	if payload == "[DONE]" {
 		return zero, io.EOF
