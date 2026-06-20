@@ -251,6 +251,29 @@ func TestChatStreamParsesServerSentEvents(t *testing.T) {
 	}
 }
 
+func TestChatStreamRejectsEmptySSEDataPayload(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: \n\n")
+	}))
+	defer server.Close()
+
+	client := New(WithBaseURL(server.URL))
+	stream, err := client.Chat.Stream(context.Background(), ChatRequest{Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+
+	event, err := stream.Next()
+	if err == nil {
+		t.Fatalf("Next returned nil error for empty payload event: %#v", event)
+	}
+	if !strings.Contains(err.Error(), "empty SSE data payload") {
+		t.Fatalf("Next error = %v, want empty payload error", err)
+	}
+}
+
 func TestChatStreamReadsEventAfterSDKTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
