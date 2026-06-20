@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -45,6 +46,7 @@ type requestTimeoutMode int
 const (
 	requestTimeoutDisabled requestTimeoutMode = iota
 	requestTimeoutUntilBodyClosed
+	requestTimeoutUntilHeadersReceived
 )
 
 func WithIdempotencyKey(key string) RequestOption {
@@ -105,7 +107,7 @@ func (c *Client) doStream(
 	body any,
 	opts ...RequestOption,
 ) (*http.Response, error) {
-	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutDisabled, opts...)
+	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutUntilHeadersReceived, opts...)
 }
 
 func (c *Client) do(
@@ -137,12 +139,13 @@ func (c *Client) do(
 		}
 	}
 
+	timeout := c.timeout
+	if config.timeout != nil {
+		timeout = *config.timeout
+	}
+
 	var cancel context.CancelFunc
 	if timeoutMode == requestTimeoutUntilBodyClosed {
-		timeout := c.timeout
-		if config.timeout != nil {
-			timeout = *config.timeout
-		}
 		if timeout > 0 {
 			ctx, cancel = context.WithTimeout(ctx, timeout)
 		}
@@ -160,8 +163,21 @@ func (c *Client) do(
 			cancelRequest()
 			return nil, err
 		}
-		res, err := c.client.Do(req)
+		var requestCancel context.CancelFunc
+		if timeoutMode == requestTimeoutUntilHeadersReceived && timeout > 0 {
+			reqCtx, cancel := context.WithCancel(ctx)
+			requestCancel = cancel
+			req = req.WithContext(reqCtx)
+		}
+		res, err := c.doWithHeadersTimeout(req, timeoutMode, timeout, requestCancel)
 		if err != nil {
+			if requestCancel != nil {
+				requestCancel()
+			}
+			if timeoutMode == requestTimeoutUntilHeadersReceived && errors.Is(err, context.DeadlineExceeded) {
+				cancelRequest()
+				return nil, fmt.Errorf("globalrouter: send request: %w", err)
+			}
 			lastErr = err
 			if attempt < retryConfig.MaxRetries {
 				if sleepErr := sleepRetry(ctx, retryConfig, attempt); sleepErr != nil {
@@ -176,6 +192,9 @@ func (c *Client) do(
 		if res.StatusCode >= 500 && attempt < retryConfig.MaxRetries {
 			_, _ = io.Copy(io.Discard, res.Body)
 			_ = res.Body.Close()
+			if requestCancel != nil {
+				requestCancel()
+			}
 			if sleepErr := sleepRetry(ctx, retryConfig, attempt); sleepErr != nil {
 				cancelRequest()
 				return nil, sleepErr
@@ -185,6 +204,9 @@ func (c *Client) do(
 		if res.StatusCode >= 400 {
 			apiErr := parseAPIError(res)
 			_ = res.Body.Close()
+			if requestCancel != nil {
+				requestCancel()
+			}
 			cancelRequest()
 			return nil, apiErr
 		}
@@ -194,6 +216,12 @@ func (c *Client) do(
 			} else {
 				res.Body = cancelOnCloseReadCloser{ReadCloser: res.Body, cancel: cancel}
 			}
+		} else if requestCancel != nil {
+			if res.Body == nil {
+				requestCancel()
+			} else {
+				res.Body = cancelOnCloseReadCloser{ReadCloser: res.Body, cancel: requestCancel}
+			}
 		}
 		return res, nil
 	}
@@ -202,6 +230,52 @@ func (c *Client) do(
 		return nil, fmt.Errorf("globalrouter: send request: %w", lastErr)
 	}
 	return nil, fmt.Errorf("globalrouter: request exhausted retries")
+}
+
+type responseResult struct {
+	res *http.Response
+	err error
+}
+
+func (c *Client) doWithHeadersTimeout(
+	req *http.Request,
+	timeoutMode requestTimeoutMode,
+	timeout time.Duration,
+	requestCancel context.CancelFunc,
+) (*http.Response, error) {
+	if timeoutMode != requestTimeoutUntilHeadersReceived || timeout <= 0 {
+		return c.client.Do(req)
+	}
+
+	resultCh := make(chan responseResult)
+	timedOut := make(chan struct{})
+	go func() {
+		res, err := c.client.Do(req)
+		select {
+		case resultCh <- responseResult{res: res, err: err}:
+		case <-timedOut:
+			if res != nil && res.Body != nil {
+				_ = res.Body.Close()
+			}
+		}
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case result := <-resultCh:
+		return result.res, result.err
+	case <-timer.C:
+		close(timedOut)
+		if requestCancel != nil {
+			requestCancel()
+		}
+		return nil, context.DeadlineExceeded
+	case <-req.Context().Done():
+		close(timedOut)
+		return nil, req.Context().Err()
+	}
 }
 
 type cancelOnCloseReadCloser struct {

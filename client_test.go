@@ -286,6 +286,34 @@ func TestChatStreamReadsEventAfterSDKTimeout(t *testing.T) {
 	}
 }
 
+func TestChatStreamTimesOutBeforeHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	client := New(
+		WithBaseURL(server.URL),
+		WithTimeout(10*time.Millisecond),
+		WithRetryConfig(RetryConfig{MaxRetries: 0}),
+	)
+	start := time.Now()
+	stream, err := client.Chat.Stream(context.Background(), ChatRequest{Model: "m"})
+	if err == nil {
+		defer stream.Close()
+		t.Fatal("expected timeout before response headers")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v, want context deadline exceeded", err)
+	}
+	if elapsed := time.Since(start); elapsed >= 80*time.Millisecond {
+		t.Fatalf("stream returned after %s, want before server writes headers", elapsed)
+	}
+}
+
 func TestTaskEventsPreserveEventNames(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/tasks/task_123/events" {
