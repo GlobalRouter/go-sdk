@@ -153,6 +153,7 @@ func (c *Client) do(
 		}
 	}
 
+	retryableRequest := isRetryableRequest(method, config.headers)
 	var lastErr error
 	for attempt := 0; attempt <= retryConfig.MaxRetries; attempt++ {
 		req, err := c.newRequest(ctx, method, path, params, bodyBytes, accept, config.headers)
@@ -163,7 +164,7 @@ func (c *Client) do(
 		res, err := c.client.Do(req)
 		if err != nil {
 			lastErr = err
-			if attempt < retryConfig.MaxRetries {
+			if retryableRequest && attempt < retryConfig.MaxRetries {
 				if sleepErr := sleepRetry(ctx, retryConfig, attempt); sleepErr != nil {
 					cancelRequest()
 					return nil, sleepErr
@@ -173,7 +174,7 @@ func (c *Client) do(
 			cancelRequest()
 			return nil, fmt.Errorf("globalrouter: send request: %w", err)
 		}
-		if res.StatusCode >= 500 && attempt < retryConfig.MaxRetries {
+		if retryableRequest && res.StatusCode >= 500 && attempt < retryConfig.MaxRetries {
 			_, _ = io.Copy(io.Discard, res.Body)
 			_ = res.Body.Close()
 			if sleepErr := sleepRetry(ctx, retryConfig, attempt); sleepErr != nil {
@@ -202,6 +203,19 @@ func (c *Client) do(
 		return nil, fmt.Errorf("globalrouter: send request: %w", lastErr)
 	}
 	return nil, fmt.Errorf("globalrouter: request exhausted retries")
+}
+
+func isRetryableRequest(method string, headers map[string]string) bool {
+	switch strings.ToUpper(method) {
+	case http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete, http.MethodOptions, http.MethodTrace:
+		return true
+	}
+	for name, value := range headers {
+		if strings.EqualFold(name, "Idempotency-Key") && value != "" {
+			return true
+		}
+	}
+	return false
 }
 
 type cancelOnCloseReadCloser struct {
