@@ -45,6 +45,7 @@ type requestTimeoutMode int
 const (
 	requestTimeoutDisabled requestTimeoutMode = iota
 	requestTimeoutUntilBodyClosed
+	requestTimeoutUntilHeaders
 )
 
 func WithIdempotencyKey(key string) RequestOption {
@@ -105,7 +106,7 @@ func (c *Client) doStream(
 	body any,
 	opts ...RequestOption,
 ) (*http.Response, error) {
-	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutDisabled, opts...)
+	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutUntilHeaders, opts...)
 }
 
 func (c *Client) do(
@@ -138,16 +139,28 @@ func (c *Client) do(
 	}
 
 	var cancel context.CancelFunc
-	if timeoutMode == requestTimeoutUntilBodyClosed {
+	var timeoutTimer *time.Timer
+	if timeoutMode != requestTimeoutDisabled {
 		timeout := c.timeout
 		if config.timeout != nil {
 			timeout = *config.timeout
 		}
 		if timeout > 0 {
-			ctx, cancel = context.WithTimeout(ctx, timeout)
+			if timeoutMode == requestTimeoutUntilHeaders {
+				ctx, cancel = context.WithCancel(ctx)
+				timeoutTimer = time.AfterFunc(timeout, cancel)
+			} else {
+				ctx, cancel = context.WithTimeout(ctx, timeout)
+			}
+		}
+	}
+	stopRequestTimeout := func() {
+		if timeoutTimer != nil {
+			timeoutTimer.Stop()
 		}
 	}
 	cancelRequest := func() {
+		stopRequestTimeout()
 		if cancel != nil {
 			cancel()
 		}
@@ -189,6 +202,9 @@ func (c *Client) do(
 			return nil, apiErr
 		}
 		if cancel != nil {
+			if timeoutMode == requestTimeoutUntilHeaders {
+				stopRequestTimeout()
+			}
 			if res.Body == nil {
 				cancelRequest()
 			} else {
