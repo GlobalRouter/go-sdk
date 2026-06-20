@@ -12,6 +12,16 @@ import (
 	"time"
 )
 
+type blockingHeadersClient struct{}
+
+func (blockingHeadersClient) Do(req *http.Request) (*http.Response, error) {
+	<-req.Context().Done()
+	if cause := context.Cause(req.Context()); cause != nil {
+		return nil, cause
+	}
+	return nil, req.Context().Err()
+}
+
 func TestChatCreateSendsBearerJSONAndDecodesResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -283,6 +293,58 @@ func TestChatStreamReadsEventAfterSDKTimeout(t *testing.T) {
 	}
 	if event.Data.ID != "chunk_delayed" || event.Data.Choices[0].Delta.Content != "later" {
 		t.Fatalf("event = %#v", event)
+	}
+}
+
+func TestChatStreamAppliesTimeoutBeforeHeaders(t *testing.T) {
+	tests := []struct {
+		name   string
+		client *Client
+		opts   []RequestOption
+	}{
+		{
+			name: "client timeout",
+			client: New(
+				WithBaseURL("https://example.test"),
+				WithClient(blockingHeadersClient{}),
+				WithTimeout(5*time.Millisecond),
+				WithRetryConfig(RetryConfig{MaxRetries: 0}),
+			),
+		},
+		{
+			name: "request timeout",
+			client: New(
+				WithBaseURL("https://example.test"),
+				WithClient(blockingHeadersClient{}),
+				WithTimeout(time.Second),
+				WithRetryConfig(RetryConfig{MaxRetries: 0}),
+			),
+			opts: []RequestOption{WithRequestTimeout(5 * time.Millisecond)},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan error, 1)
+			go func() {
+				stream, err := tt.client.Chat.Stream(ctx, ChatRequest{Model: "m"}, tt.opts...)
+				if stream != nil {
+					_ = stream.Close()
+				}
+				done <- err
+			}()
+
+			select {
+			case err := <-done:
+				if !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("error = %v, want context deadline exceeded", err)
+				}
+			case <-time.After(200 * time.Millisecond):
+				t.Fatal("stream request did not time out before headers")
+			}
+		})
 	}
 }
 

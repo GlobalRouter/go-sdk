@@ -44,6 +44,7 @@ type requestTimeoutMode int
 
 const (
 	requestTimeoutDisabled requestTimeoutMode = iota
+	requestTimeoutUntilHeaders
 	requestTimeoutUntilBodyClosed
 )
 
@@ -105,7 +106,7 @@ func (c *Client) doStream(
 	body any,
 	opts ...RequestOption,
 ) (*http.Response, error) {
-	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutDisabled, opts...)
+	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutUntilHeaders, opts...)
 }
 
 func (c *Client) do(
@@ -138,16 +139,34 @@ func (c *Client) do(
 	}
 
 	var cancel context.CancelFunc
-	if timeoutMode == requestTimeoutUntilBodyClosed {
+	var stopHeaderTimeout func()
+	if timeoutMode != requestTimeoutDisabled {
 		timeout := c.timeout
 		if config.timeout != nil {
 			timeout = *config.timeout
 		}
 		if timeout > 0 {
-			ctx, cancel = context.WithTimeout(ctx, timeout)
+			if timeoutMode == requestTimeoutUntilHeaders {
+				var cancelCause context.CancelCauseFunc
+				ctx, cancelCause = context.WithCancelCause(ctx)
+				cancel = func() {
+					cancelCause(context.Canceled)
+				}
+				timer := time.AfterFunc(timeout, func() {
+					cancelCause(context.DeadlineExceeded)
+				})
+				stopHeaderTimeout = func() {
+					timer.Stop()
+				}
+			} else {
+				ctx, cancel = context.WithTimeout(ctx, timeout)
+			}
 		}
 	}
 	cancelRequest := func() {
+		if stopHeaderTimeout != nil {
+			stopHeaderTimeout()
+		}
 		if cancel != nil {
 			cancel()
 		}
@@ -187,6 +206,9 @@ func (c *Client) do(
 			_ = res.Body.Close()
 			cancelRequest()
 			return nil, apiErr
+		}
+		if stopHeaderTimeout != nil {
+			stopHeaderTimeout()
 		}
 		if cancel != nil {
 			if res.Body == nil {
