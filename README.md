@@ -130,7 +130,7 @@ if errors.As(err, &apiErr) {
 ok := globalrouter.VerifyWebhookSignature(secret, payload, signature)
 ```
 
-The verifier supports both `sha256=<hex>` and `t=<timestamp>,v1=<hex>` formats.
+The verifier supports both `sha256=<hex>` and `t=<timestamp>,v1=<hex>` formats. Timestamped signatures must be within the default 5 minute tolerance. Legacy `sha256=<hex>` signatures do not include a timestamp and are verified for compatibility without a freshness check.
 
 ## Development
 
