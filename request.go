@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -44,6 +45,7 @@ type requestTimeoutMode int
 
 const (
 	requestTimeoutDisabled requestTimeoutMode = iota
+	requestTimeoutUntilHeaders
 	requestTimeoutUntilBodyClosed
 )
 
@@ -105,7 +107,7 @@ func (c *Client) doStream(
 	body any,
 	opts ...RequestOption,
 ) (*http.Response, error) {
-	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutDisabled, opts...)
+	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutUntilHeaders, opts...)
 }
 
 func (c *Client) do(
@@ -137,19 +139,19 @@ func (c *Client) do(
 		}
 	}
 
-	var cancel context.CancelFunc
-	if timeoutMode == requestTimeoutUntilBodyClosed {
+	var timeoutState *requestTimeoutState
+	if timeoutMode != requestTimeoutDisabled {
 		timeout := c.timeout
 		if config.timeout != nil {
 			timeout = *config.timeout
 		}
 		if timeout > 0 {
-			ctx, cancel = context.WithTimeout(ctx, timeout)
+			ctx, timeoutState = newRequestTimeoutState(ctx, timeout, timeoutMode)
 		}
 	}
 	cancelRequest := func() {
-		if cancel != nil {
-			cancel()
+		if timeoutState != nil {
+			timeoutState.cancel()
 		}
 	}
 
@@ -162,10 +164,16 @@ func (c *Client) do(
 		}
 		res, err := c.client.Do(req)
 		if err != nil {
+			if timeoutState != nil && timeoutState.deadlineExceeded() {
+				err = context.DeadlineExceeded
+			}
 			lastErr = err
 			if attempt < retryConfig.MaxRetries {
 				if sleepErr := sleepRetry(ctx, retryConfig, attempt); sleepErr != nil {
 					cancelRequest()
+					if timeoutState != nil && timeoutState.deadlineExceeded() {
+						sleepErr = context.DeadlineExceeded
+					}
 					return nil, sleepErr
 				}
 				continue
@@ -173,11 +181,22 @@ func (c *Client) do(
 			cancelRequest()
 			return nil, fmt.Errorf("globalrouter: send request: %w", err)
 		}
+		if timeoutState != nil &&
+			timeoutState.mode == requestTimeoutUntilHeaders &&
+			(res.StatusCode < 500 || attempt >= retryConfig.MaxRetries) &&
+			timeoutState.stopHeaderTimer() {
+			_ = res.Body.Close()
+			cancelRequest()
+			return nil, fmt.Errorf("globalrouter: send request: %w", context.DeadlineExceeded)
+		}
 		if res.StatusCode >= 500 && attempt < retryConfig.MaxRetries {
 			_, _ = io.Copy(io.Discard, res.Body)
 			_ = res.Body.Close()
 			if sleepErr := sleepRetry(ctx, retryConfig, attempt); sleepErr != nil {
 				cancelRequest()
+				if timeoutState != nil && timeoutState.deadlineExceeded() {
+					sleepErr = context.DeadlineExceeded
+				}
 				return nil, sleepErr
 			}
 			continue
@@ -188,11 +207,11 @@ func (c *Client) do(
 			cancelRequest()
 			return nil, apiErr
 		}
-		if cancel != nil {
+		if timeoutState != nil {
 			if res.Body == nil {
 				cancelRequest()
 			} else {
-				res.Body = cancelOnCloseReadCloser{ReadCloser: res.Body, cancel: cancel}
+				res.Body = cancelOnCloseReadCloser{ReadCloser: res.Body, cancel: timeoutState.cancel}
 			}
 		}
 		return res, nil
@@ -202,6 +221,41 @@ func (c *Client) do(
 		return nil, fmt.Errorf("globalrouter: send request: %w", lastErr)
 	}
 	return nil, fmt.Errorf("globalrouter: request exhausted retries")
+}
+
+type requestTimeoutState struct {
+	mode     requestTimeoutMode
+	cancel   context.CancelFunc
+	timer    *time.Timer
+	timedOut atomic.Bool
+}
+
+func newRequestTimeoutState(ctx context.Context, timeout time.Duration, mode requestTimeoutMode) (context.Context, *requestTimeoutState) {
+	if mode == requestTimeoutUntilBodyClosed {
+		timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
+		return timeoutCtx, &requestTimeoutState{mode: mode, cancel: cancel}
+	}
+	timeoutCtx, cancel := context.WithCancel(ctx)
+	state := &requestTimeoutState{mode: mode, cancel: cancel}
+	state.timer = time.AfterFunc(timeout, func() {
+		state.timedOut.Store(true)
+		cancel()
+	})
+	return timeoutCtx, state
+}
+
+func (s *requestTimeoutState) deadlineExceeded() bool {
+	return s.mode == requestTimeoutUntilHeaders && s.timedOut.Load()
+}
+
+func (s *requestTimeoutState) stopHeaderTimer() bool {
+	if s.mode != requestTimeoutUntilHeaders || s.timer == nil {
+		return false
+	}
+	if s.timer.Stop() {
+		return false
+	}
+	return true
 }
 
 type cancelOnCloseReadCloser struct {
