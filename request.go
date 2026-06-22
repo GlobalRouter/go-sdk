@@ -136,6 +136,7 @@ func (c *Client) do(
 			return nil, fmt.Errorf("globalrouter: encode request: %w", err)
 		}
 	}
+	retryable := retryableRequest(method, config.headers, bodyBytes)
 
 	var cancel context.CancelFunc
 	if timeoutMode == requestTimeoutUntilBodyClosed {
@@ -163,7 +164,7 @@ func (c *Client) do(
 		res, err := c.client.Do(req)
 		if err != nil {
 			lastErr = err
-			if attempt < retryConfig.MaxRetries {
+			if retryable && attempt < retryConfig.MaxRetries {
 				if sleepErr := sleepRetry(ctx, retryConfig, attempt); sleepErr != nil {
 					cancelRequest()
 					return nil, sleepErr
@@ -173,7 +174,7 @@ func (c *Client) do(
 			cancelRequest()
 			return nil, fmt.Errorf("globalrouter: send request: %w", err)
 		}
-		if res.StatusCode >= 500 && attempt < retryConfig.MaxRetries {
+		if retryable && res.StatusCode >= 500 && attempt < retryConfig.MaxRetries {
 			_, _ = io.Copy(io.Discard, res.Body)
 			_ = res.Body.Close()
 			if sleepErr := sleepRetry(ctx, retryConfig, attempt); sleepErr != nil {
@@ -255,6 +256,45 @@ func (c *Client) newRequest(
 		req.Header.Set(k, v)
 	}
 	return req, nil
+}
+
+func retryableRequest(method string, headers map[string]string, bodyBytes []byte) bool {
+	switch strings.ToUpper(method) {
+	case http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete, http.MethodOptions, http.MethodTrace:
+		return true
+	}
+	if hasIdempotencyKeyHeader(headers) {
+		return true
+	}
+	return hasIdempotencyKeyBody(bodyBytes)
+}
+
+func hasIdempotencyKeyHeader(headers map[string]string) bool {
+	for name, value := range headers {
+		if strings.EqualFold(name, "Idempotency-Key") && strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasIdempotencyKeyBody(bodyBytes []byte) bool {
+	if len(bodyBytes) == 0 {
+		return false
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(bodyBytes, &payload); err != nil {
+		return false
+	}
+	raw, ok := payload["idempotency_key"]
+	if !ok {
+		return false
+	}
+	var key string
+	if err := json.Unmarshal(raw, &key); err != nil {
+		return false
+	}
+	return strings.TrimSpace(key) != ""
 }
 
 func sleepRetry(ctx context.Context, config RetryConfig, attempt int) error {
