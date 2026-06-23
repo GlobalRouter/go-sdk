@@ -108,6 +108,18 @@ func (c *Client) doStream(
 	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutDisabled, opts...)
 }
 
+func (c *Client) doBinary(
+	ctx context.Context,
+	method string,
+	path string,
+	params url.Values,
+	body any,
+	accept string,
+	opts ...RequestOption,
+) (*http.Response, error) {
+	return c.do(ctx, method, path, params, body, accept, requestTimeoutUntilBodyClosed, opts...)
+}
+
 func (c *Client) do(
 	ctx context.Context,
 	method string,
