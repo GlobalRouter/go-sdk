@@ -45,19 +45,26 @@ func parseAPIError(res *http.Response) *APIError {
 			RequestID string `json:"request_id"`
 		} `json:"error"`
 	}
+	parsedEnvelope := false
 	if json.Unmarshal(raw, &envelope) == nil {
 		if envelope.Error.Code != "" {
 			errOut.Code = envelope.Error.Code
+			parsedEnvelope = true
 		}
 		if envelope.Error.Message != "" {
 			errOut.Message = envelope.Error.Message
+			parsedEnvelope = true
 		}
 		if envelope.Error.Type != "" {
 			errOut.Type = envelope.Error.Type
+			parsedEnvelope = true
 		}
-		errOut.RequestID = envelope.Error.RequestID
+		if envelope.Error.RequestID != "" {
+			errOut.RequestID = envelope.Error.RequestID
+			parsedEnvelope = true
+		}
 	}
-	if errOut.Message == "" {
+	if !parsedEnvelope && len(raw) > 0 {
 		errOut.Message = string(raw)
 	}
 	return errOut
