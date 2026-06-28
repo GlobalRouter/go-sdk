@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -99,7 +100,7 @@ func (s *SSEStream[T]) dispatch() (StreamEvent[T], error) {
 	s.event = ""
 	s.data = nil
 	if payload == "" {
-		return zero, nil
+		return zero, errors.New("empty SSE data payload")
 	}
 	if payload == "[DONE]" {
 		return zero, io.EOF

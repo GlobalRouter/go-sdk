@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -48,6 +49,7 @@ type requestTimeoutMode int
 const (
 	requestTimeoutDisabled requestTimeoutMode = iota
 	requestTimeoutUntilBodyClosed
+	requestTimeoutUntilResponseHeaders
 )
 
 func WithIdempotencyKey(key string) RequestOption {
@@ -108,7 +110,19 @@ func (c *Client) doStream(
 	body any,
 	opts ...RequestOption,
 ) (*http.Response, error) {
-	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutDisabled, opts...)
+	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutUntilResponseHeaders, opts...)
+}
+
+func (c *Client) doBinary(
+	ctx context.Context,
+	method string,
+	path string,
+	params url.Values,
+	body any,
+	accept string,
+	opts ...RequestOption,
+) (*http.Response, error) {
+	return c.do(ctx, method, path, params, body, accept, requestTimeoutUntilBodyClosed, opts...)
 }
 
 func (c *Client) do(
@@ -139,15 +153,21 @@ func (c *Client) do(
 			return nil, fmt.Errorf("globalrouter: encode request: %w", err)
 		}
 	}
+	retryable := retryableRequest(method, config.headers, bodyBytes)
 
 	var cancel context.CancelFunc
-	if timeoutMode == requestTimeoutUntilBodyClosed {
+	var stopResponseHeaderTimeout func()
+	if timeoutMode != requestTimeoutDisabled {
 		timeout := c.timeout
 		if config.timeout != nil {
 			timeout = *config.timeout
 		}
 		if timeout > 0 {
-			ctx, cancel = context.WithTimeout(ctx, timeout)
+			if timeoutMode == requestTimeoutUntilResponseHeaders {
+				ctx, cancel, stopResponseHeaderTimeout = contextWithStoppableTimeout(ctx, timeout)
+			} else {
+				ctx, cancel = context.WithTimeout(ctx, timeout)
+			}
 		}
 	}
 	cancelRequest := func() {
@@ -166,7 +186,7 @@ func (c *Client) do(
 		res, err := c.client.Do(req)
 		if err != nil {
 			lastErr = err
-			if attempt < retryConfig.MaxRetries {
+			if retryable && attempt < retryConfig.MaxRetries {
 				if sleepErr := sleepRetry(ctx, retryConfig, attempt); sleepErr != nil {
 					cancelRequest()
 					return nil, sleepErr
@@ -176,7 +196,7 @@ func (c *Client) do(
 			cancelRequest()
 			return nil, fmt.Errorf("globalrouter: send request: %w", err)
 		}
-		if res.StatusCode >= 500 && attempt < retryConfig.MaxRetries {
+		if retryable && res.StatusCode >= 500 && attempt < retryConfig.MaxRetries {
 			_, _ = io.Copy(io.Discard, res.Body)
 			_ = res.Body.Close()
 			if sleepErr := sleepRetry(ctx, retryConfig, attempt); sleepErr != nil {
@@ -192,6 +212,9 @@ func (c *Client) do(
 			return nil, apiErr
 		}
 		if cancel != nil {
+			if stopResponseHeaderTimeout != nil {
+				stopResponseHeaderTimeout()
+			}
 			if res.Body == nil {
 				cancelRequest()
 			} else {
@@ -205,6 +228,72 @@ func (c *Client) do(
 		return nil, fmt.Errorf("globalrouter: send request: %w", lastErr)
 	}
 	return nil, fmt.Errorf("globalrouter: request exhausted retries")
+}
+
+type stoppableTimeoutContext struct {
+	context.Context
+	parent   context.Context
+	deadline time.Time
+	state    *stoppableTimeoutState
+}
+
+type stoppableTimeoutState struct {
+	mu      sync.Mutex
+	stopped bool
+}
+
+func contextWithStoppableTimeout(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc, func()) {
+	inner, cancelCause := context.WithCancelCause(parent)
+	state := &stoppableTimeoutState{}
+	ctx := &stoppableTimeoutContext{
+		Context:  inner,
+		parent:   parent,
+		deadline: time.Now().Add(timeout),
+		state:    state,
+	}
+	timer := time.AfterFunc(timeout, func() {
+		state.mu.Lock()
+		stopped := state.stopped
+		state.mu.Unlock()
+		if !stopped {
+			cancelCause(context.DeadlineExceeded)
+		}
+	})
+
+	stop := func() {
+		state.mu.Lock()
+		state.stopped = true
+		timer.Stop()
+		state.mu.Unlock()
+	}
+
+	return ctx, func() {
+		stop()
+		cancelCause(context.Canceled)
+	}, stop
+}
+
+func (c *stoppableTimeoutContext) Deadline() (time.Time, bool) {
+	c.state.mu.Lock()
+	stopped := c.state.stopped
+	deadline := c.deadline
+	c.state.mu.Unlock()
+
+	parentDeadline, ok := c.parent.Deadline()
+	if stopped {
+		return parentDeadline, ok
+	}
+	if ok && parentDeadline.Before(deadline) {
+		return parentDeadline, true
+	}
+	return deadline, true
+}
+
+func (c *stoppableTimeoutContext) Err() error {
+	if err := context.Cause(c.Context); err != nil {
+		return err
+	}
+	return c.Context.Err()
 }
 
 type cancelOnCloseReadCloser struct {
@@ -258,6 +347,45 @@ func (c *Client) newRequest(
 		req.Header.Set(k, v)
 	}
 	return req, nil
+}
+
+func retryableRequest(method string, headers map[string]string, bodyBytes []byte) bool {
+	switch strings.ToUpper(method) {
+	case http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete, http.MethodOptions, http.MethodTrace:
+		return true
+	}
+	if hasIdempotencyKeyHeader(headers) {
+		return true
+	}
+	return hasIdempotencyKeyBody(bodyBytes)
+}
+
+func hasIdempotencyKeyHeader(headers map[string]string) bool {
+	for name, value := range headers {
+		if strings.EqualFold(name, "Idempotency-Key") && strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasIdempotencyKeyBody(bodyBytes []byte) bool {
+	if len(bodyBytes) == 0 {
+		return false
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(bodyBytes, &payload); err != nil {
+		return false
+	}
+	raw, ok := payload["idempotency_key"]
+	if !ok {
+		return false
+	}
+	var key string
+	if err := json.Unmarshal(raw, &key); err != nil {
+		return false
+	}
+	return strings.TrimSpace(key) != ""
 }
 
 func sleepRetry(ctx context.Context, config RetryConfig, attempt int) error {

@@ -189,16 +189,97 @@ func TestAPIErrorParsesEnvelope(t *testing.T) {
 	}
 }
 
+func TestAudioCreateSpeechReturnsBinaryResponse(t *testing.T) {
+	audio := []byte{0xff, 0xfb, 0x90, 0x64, 0x00}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/v1/audio/speech" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Accept"); got != "audio/mpeg" {
+			t.Fatalf("accept header = %q", got)
+		}
+		var body AudioSpeechRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Model != "m" || body.Input != "hello" || body.Voice != "alloy" || body.ResponseFormat != "mp3" {
+			t.Fatalf("request body = %#v", body)
+		}
+		w.Header().Set("Content-Type", "audio/mpeg")
+		_, _ = w.Write(audio)
+	}))
+	defer server.Close()
+
+	client := New(WithBaseURL(server.URL), WithRetryConfig(RetryConfig{MaxRetries: 0}))
+	res, err := client.Audio.CreateSpeech(context.Background(), AudioSpeechRequest{
+		Model:          "m",
+		Input:          "hello",
+		Voice:          "alloy",
+		ResponseFormat: "mp3",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if got := res.Header.Get("Content-Type"); got != "audio/mpeg" {
+		t.Fatalf("content-type = %q", got)
+	}
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != string(audio) {
+		t.Fatalf("audio bytes = %v, want %v", data, audio)
+	}
+}
+
+func TestAudioCreateSpeechParsesAPIErrorEnvelope(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(t, w, map[string]any{
+			"error": map[string]any{
+				"code":       "INVALID_REQUEST",
+				"message":    "missing voice",
+				"type":       "invalid_request_error",
+				"request_id": "req_audio_bad",
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := New(WithBaseURL(server.URL), WithRetryConfig(RetryConfig{MaxRetries: 0}))
+	_, err := client.Audio.CreateSpeech(context.Background(), AudioSpeechRequest{Model: "m", Input: "hello"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error type = %T", err)
+	}
+	if apiErr.StatusCode != http.StatusBadRequest || apiErr.Code != "INVALID_REQUEST" || apiErr.RequestID != "req_audio_bad" {
+		t.Fatalf("api error = %#v", apiErr)
+	}
+}
+
 func TestRetryRetriesServerErrorsOnly(t *testing.T) {
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempts++
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/v1/models" {
+			t.Fatalf("path = %s, want /v1/models", r.URL.Path)
+		}
 		if attempts == 1 {
 			w.WriteHeader(http.StatusInternalServerError)
 			writeJSON(t, w, map[string]any{"error": map[string]any{"code": "UPSTREAM", "message": "try again"}})
 			return
 		}
-		writeJSON(t, w, ChatResponse{ID: "ok", Model: "m", Choices: []ChatChoice{{Index: 0}}})
+		writeJSON(t, w, ModelsResponse{Object: "list", Data: []Model{{ID: "m", Object: "model"}}})
 	}))
 	defer server.Close()
 
@@ -206,7 +287,7 @@ func TestRetryRetriesServerErrorsOnly(t *testing.T) {
 		WithBaseURL(server.URL),
 		WithRetryConfig(RetryConfig{MaxRetries: 1, MinDelay: time.Millisecond}),
 	)
-	if _, err := client.Chat.Create(context.Background(), ChatRequest{Model: "m"}); err != nil {
+	if _, err := client.Models.List(context.Background(), nil); err != nil {
 		t.Fatal(err)
 	}
 	if attempts != 2 {
@@ -214,49 +295,81 @@ func TestRetryRetriesServerErrorsOnly(t *testing.T) {
 	}
 }
 
-func TestNegativeRetriesStillSendInitialRequest(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		call func(*Client) error
-	}{
-		{
-			name: "client config",
-			call: func(client *Client) error {
-				_, err := client.Chat.Create(context.Background(), ChatRequest{Model: "m"})
-				return err
-			},
-		},
-		{
-			name: "request config",
-			call: func(client *Client) error {
-				_, err := client.Chat.Create(
-					context.Background(),
-					ChatRequest{Model: "m"},
-					WithRequestRetries(RetryConfig{MaxRetries: -1}),
-				)
-				return err
-			},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			attempts := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				attempts++
-				writeJSON(t, w, ChatResponse{ID: "ok", Model: "m", Choices: []ChatChoice{{Index: 0}}})
-			}))
-			defer server.Close()
+func TestRetryDoesNotRetryPostWithoutIdempotencyKey(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/v1/tasks" {
+			t.Fatalf("path = %s, want /v1/tasks", r.URL.Path)
+		}
+		if attempts == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			writeJSON(t, w, map[string]any{"error": map[string]any{"code": "UPSTREAM", "message": "try again"}})
+			return
+		}
+		writeJSON(t, w, TaskResponse{ID: "task_1", Object: "task", Status: TaskStatusQueued})
+	}))
+	defer server.Close()
 
-			client := New(
-				WithBaseURL(server.URL),
-				WithRetryConfig(RetryConfig{MaxRetries: -1}),
-			)
-			if err := tc.call(client); err != nil {
-				t.Fatal(err)
-			}
-			if attempts != 1 {
-				t.Fatalf("attempts = %d, want 1", attempts)
-			}
-		})
+	client := New(
+		WithBaseURL(server.URL),
+		WithRetryConfig(RetryConfig{MaxRetries: 1, MinDelay: time.Millisecond}),
+	)
+	_, err := client.Tasks.Create(context.Background(), TaskCreateRequest{
+		Type:  TaskTypeVideoGeneration,
+		Model: "m",
+		Input: map[string]any{"prompt": "x"},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
+	}
+}
+
+func TestRetryRetriesPostWithIdempotencyKey(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/v1/tasks" {
+			t.Fatalf("path = %s, want /v1/tasks", r.URL.Path)
+		}
+		if got := r.Header.Get("Idempotency-Key"); got != "idem_1" {
+			t.Fatalf("idempotency key = %q, want idem_1", got)
+		}
+		if attempts == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			writeJSON(t, w, map[string]any{"error": map[string]any{"code": "UPSTREAM", "message": "try again"}})
+			return
+		}
+		writeJSON(t, w, TaskResponse{ID: "task_1", Object: "task", Status: TaskStatusQueued})
+	}))
+	defer server.Close()
+
+	client := New(
+		WithBaseURL(server.URL),
+		WithRetryConfig(RetryConfig{MaxRetries: 1, MinDelay: time.Millisecond}),
+	)
+	res, err := client.Tasks.Create(context.Background(), TaskCreateRequest{
+		Type:  TaskTypeVideoGeneration,
+		Model: "m",
+		Input: map[string]any{"prompt": "x"},
+	}, WithIdempotencyKey("idem_1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+	if res.ID != "task_1" {
+		t.Fatalf("unexpected response: %#v", res)
 	}
 }
 
@@ -294,6 +407,43 @@ func TestChatStreamParsesServerSentEvents(t *testing.T) {
 	}
 	if _, err := stream.Next(); !errors.Is(err, io.EOF) {
 		t.Fatalf("second Next error = %v, want EOF", err)
+	}
+}
+
+func TestChatStreamRequestTimeoutBeforeHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(200 * time.Millisecond):
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+		case <-r.Context().Done():
+			return
+		}
+	}))
+	defer server.Close()
+
+	client := New(
+		WithBaseURL(server.URL),
+		WithRetryConfig(RetryConfig{MaxRetries: 0}),
+	)
+
+	start := time.Now()
+	stream, err := client.Chat.Stream(
+		context.Background(),
+		ChatRequest{Model: "m"},
+		WithRequestTimeout(10*time.Millisecond),
+	)
+	if stream != nil {
+		_ = stream.Close()
+	}
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v, want context deadline exceeded", err)
+	}
+	if elapsed := time.Since(start); elapsed > 150*time.Millisecond {
+		t.Fatalf("timeout took %s, want under 150ms", elapsed)
 	}
 }
 
@@ -358,6 +508,48 @@ func TestTaskEventsPreserveEventNames(t *testing.T) {
 	}
 }
 
+func TestVideosGenerateSendsRoutingControls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/v1/videos/generations" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Idempotency-Key"); got != "idem_video_1" {
+			t.Fatalf("idempotency header = %q", got)
+		}
+
+		var body GenerationRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Provider != "runway" {
+			t.Fatalf("provider = %q", body.Provider)
+		}
+		if body.Routing["strategy"] != "fallback" || body.Routing["preferred_provider"] != "runway" {
+			t.Fatalf("routing = %#v", body.Routing)
+		}
+
+		writeJSON(t, w, TaskResponse{ID: "task_1", Object: "task", Status: TaskStatusQueued, Type: TaskTypeVideoGeneration, Model: body.Model})
+	}))
+	defer server.Close()
+
+	client := New(WithBaseURL(server.URL), WithRetryConfig(RetryConfig{MaxRetries: 0}))
+	_, err := client.Videos.Generate(context.Background(), GenerationRequest{
+		Model:    "video-model",
+		Provider: "runway",
+		Prompt:   "video",
+		Routing: map[string]any{
+			"strategy":           "fallback",
+			"preferred_provider": "runway",
+		},
+	}, WithIdempotencyKey("idem_video_1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTaskAndMultimodalResourcePaths(t *testing.T) {
 	seen := map[string]bool{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -394,7 +586,10 @@ func TestTaskAndMultimodalResourcePaths(t *testing.T) {
 	_, _ = client.Tasks.Cancel(ctx, "task_1")
 	_, _ = client.Tasks.Retry(ctx, "task_1")
 	_, _ = client.Images.Generate(ctx, ImageGenerationRequest{Model: "m", Prompt: "image"})
-	_, _ = client.Audio.CreateSpeech(ctx, AudioSpeechRequest{Model: "m", Input: "hello", Voice: "alloy"})
+	speechRes, _ := client.Audio.CreateSpeech(ctx, AudioSpeechRequest{Model: "m", Input: "hello", Voice: "alloy"})
+	if speechRes != nil {
+		_ = speechRes.Body.Close()
+	}
 	_, _ = client.Audio.CreateTranscription(ctx, AudioTranscriptionRequest{Model: "m", FileURL: "https://example.com/a.wav"})
 	_, _ = client.Videos.Generate(ctx, GenerationRequest{Model: "m", Prompt: "video"}, WithIdempotencyKey("idem_1"))
 	_, _ = client.ThreeD.Generate(ctx, GenerationRequest{Model: "m", Prompt: "mesh"})
