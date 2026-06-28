@@ -2,6 +2,7 @@ package globalrouter
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -12,8 +13,13 @@ func TestVerifyWebhookSignature(t *testing.T) {
 		t.Fatal("sha256 signature should verify")
 	}
 	now := time.Unix(1780880000, 0)
-	if !verifyWebhookSignature("secret", payload, timestampedSignature("secret", payload, now), now, defaultWebhookSignatureTolerance) {
+	timestamped := timestampedSignature("secret", payload, now)
+	if !verifyWebhookSignature("secret", payload, timestamped, now, defaultWebhookSignatureTolerance) {
 		t.Fatal("timestamped signature should verify")
+	}
+	spaced := strings.Replace(timestamped, ",v1=", ", v1=", 1)
+	if !verifyWebhookSignature("secret", payload, spaced, now, defaultWebhookSignatureTolerance) {
+		t.Fatal("timestamped signature with comma whitespace should verify")
 	}
 	if VerifyWebhookSignature("secret", payload, "sha256=bad") {
 		t.Fatal("bad signature should not verify")
