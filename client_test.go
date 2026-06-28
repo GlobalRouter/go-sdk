@@ -189,6 +189,81 @@ func TestAPIErrorParsesEnvelope(t *testing.T) {
 	}
 }
 
+func TestAudioCreateSpeechReturnsBinaryResponse(t *testing.T) {
+	audio := []byte{0xff, 0xfb, 0x90, 0x64, 0x00}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/v1/audio/speech" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Accept"); got != "audio/mpeg" {
+			t.Fatalf("accept header = %q", got)
+		}
+		var body AudioSpeechRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Model != "m" || body.Input != "hello" || body.Voice != "alloy" || body.ResponseFormat != "mp3" {
+			t.Fatalf("request body = %#v", body)
+		}
+		w.Header().Set("Content-Type", "audio/mpeg")
+		_, _ = w.Write(audio)
+	}))
+	defer server.Close()
+
+	client := New(WithBaseURL(server.URL), WithRetryConfig(RetryConfig{MaxRetries: 0}))
+	res, err := client.Audio.CreateSpeech(context.Background(), AudioSpeechRequest{
+		Model:          "m",
+		Input:          "hello",
+		Voice:          "alloy",
+		ResponseFormat: "mp3",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if got := res.Header.Get("Content-Type"); got != "audio/mpeg" {
+		t.Fatalf("content-type = %q", got)
+	}
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != string(audio) {
+		t.Fatalf("audio bytes = %v, want %v", data, audio)
+	}
+}
+
+func TestAudioCreateSpeechParsesAPIErrorEnvelope(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(t, w, map[string]any{
+			"error": map[string]any{
+				"code":       "INVALID_REQUEST",
+				"message":    "missing voice",
+				"type":       "invalid_request_error",
+				"request_id": "req_audio_bad",
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := New(WithBaseURL(server.URL), WithRetryConfig(RetryConfig{MaxRetries: 0}))
+	_, err := client.Audio.CreateSpeech(context.Background(), AudioSpeechRequest{Model: "m", Input: "hello"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error type = %T", err)
+	}
+	if apiErr.StatusCode != http.StatusBadRequest || apiErr.Code != "INVALID_REQUEST" || apiErr.RequestID != "req_audio_bad" {
+		t.Fatalf("api error = %#v", apiErr)
+	}
+}
+
 func TestRetryRetriesServerErrorsOnly(t *testing.T) {
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -390,7 +465,10 @@ func TestTaskAndMultimodalResourcePaths(t *testing.T) {
 	_, _ = client.Tasks.Cancel(ctx, "task_1")
 	_, _ = client.Tasks.Retry(ctx, "task_1")
 	_, _ = client.Images.Generate(ctx, ImageGenerationRequest{Model: "m", Prompt: "image"})
-	_, _ = client.Audio.CreateSpeech(ctx, AudioSpeechRequest{Model: "m", Input: "hello", Voice: "alloy"})
+	speechRes, _ := client.Audio.CreateSpeech(ctx, AudioSpeechRequest{Model: "m", Input: "hello", Voice: "alloy"})
+	if speechRes != nil {
+		_ = speechRes.Body.Close()
+	}
 	_, _ = client.Audio.CreateTranscription(ctx, AudioTranscriptionRequest{Model: "m", FileURL: "https://example.com/a.wav"})
 	_, _ = client.Videos.Generate(ctx, GenerationRequest{Model: "m", Prompt: "video"}, WithIdempotencyKey("idem_1"))
 	_, _ = client.ThreeD.Generate(ctx, GenerationRequest{Model: "m", Prompt: "mesh"})
