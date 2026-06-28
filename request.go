@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -45,6 +46,7 @@ type requestTimeoutMode int
 const (
 	requestTimeoutDisabled requestTimeoutMode = iota
 	requestTimeoutUntilBodyClosed
+	requestTimeoutUntilResponseHeaders
 )
 
 func WithIdempotencyKey(key string) RequestOption {
@@ -105,7 +107,7 @@ func (c *Client) doStream(
 	body any,
 	opts ...RequestOption,
 ) (*http.Response, error) {
-	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutDisabled, opts...)
+	return c.do(ctx, method, path, params, body, "text/event-stream", requestTimeoutUntilResponseHeaders, opts...)
 }
 
 func (c *Client) doBinary(
@@ -151,13 +153,18 @@ func (c *Client) do(
 	retryable := retryableRequest(method, config.headers, bodyBytes)
 
 	var cancel context.CancelFunc
-	if timeoutMode == requestTimeoutUntilBodyClosed {
+	var stopResponseHeaderTimeout func()
+	if timeoutMode != requestTimeoutDisabled {
 		timeout := c.timeout
 		if config.timeout != nil {
 			timeout = *config.timeout
 		}
 		if timeout > 0 {
-			ctx, cancel = context.WithTimeout(ctx, timeout)
+			if timeoutMode == requestTimeoutUntilResponseHeaders {
+				ctx, cancel, stopResponseHeaderTimeout = contextWithStoppableTimeout(ctx, timeout)
+			} else {
+				ctx, cancel = context.WithTimeout(ctx, timeout)
+			}
 		}
 	}
 	cancelRequest := func() {
@@ -202,6 +209,9 @@ func (c *Client) do(
 			return nil, apiErr
 		}
 		if cancel != nil {
+			if stopResponseHeaderTimeout != nil {
+				stopResponseHeaderTimeout()
+			}
 			if res.Body == nil {
 				cancelRequest()
 			} else {
@@ -215,6 +225,72 @@ func (c *Client) do(
 		return nil, fmt.Errorf("globalrouter: send request: %w", lastErr)
 	}
 	return nil, fmt.Errorf("globalrouter: request exhausted retries")
+}
+
+type stoppableTimeoutContext struct {
+	context.Context
+	parent   context.Context
+	deadline time.Time
+	state    *stoppableTimeoutState
+}
+
+type stoppableTimeoutState struct {
+	mu      sync.Mutex
+	stopped bool
+}
+
+func contextWithStoppableTimeout(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc, func()) {
+	inner, cancelCause := context.WithCancelCause(parent)
+	state := &stoppableTimeoutState{}
+	ctx := &stoppableTimeoutContext{
+		Context:  inner,
+		parent:   parent,
+		deadline: time.Now().Add(timeout),
+		state:    state,
+	}
+	timer := time.AfterFunc(timeout, func() {
+		state.mu.Lock()
+		stopped := state.stopped
+		state.mu.Unlock()
+		if !stopped {
+			cancelCause(context.DeadlineExceeded)
+		}
+	})
+
+	stop := func() {
+		state.mu.Lock()
+		state.stopped = true
+		timer.Stop()
+		state.mu.Unlock()
+	}
+
+	return ctx, func() {
+		stop()
+		cancelCause(context.Canceled)
+	}, stop
+}
+
+func (c *stoppableTimeoutContext) Deadline() (time.Time, bool) {
+	c.state.mu.Lock()
+	stopped := c.state.stopped
+	deadline := c.deadline
+	c.state.mu.Unlock()
+
+	parentDeadline, ok := c.parent.Deadline()
+	if stopped {
+		return parentDeadline, ok
+	}
+	if ok && parentDeadline.Before(deadline) {
+		return parentDeadline, true
+	}
+	return deadline, true
+}
+
+func (c *stoppableTimeoutContext) Err() error {
+	if err := context.Cause(c.Context); err != nil {
+		return err
+	}
+	return c.Context.Err()
 }
 
 type cancelOnCloseReadCloser struct {
