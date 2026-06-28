@@ -387,6 +387,48 @@ func TestTaskEventsPreserveEventNames(t *testing.T) {
 	}
 }
 
+func TestVideosGenerateSendsRoutingControls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/v1/videos/generations" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Idempotency-Key"); got != "idem_video_1" {
+			t.Fatalf("idempotency header = %q", got)
+		}
+
+		var body GenerationRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Provider != "runway" {
+			t.Fatalf("provider = %q", body.Provider)
+		}
+		if body.Routing["strategy"] != "fallback" || body.Routing["preferred_provider"] != "runway" {
+			t.Fatalf("routing = %#v", body.Routing)
+		}
+
+		writeJSON(t, w, TaskResponse{ID: "task_1", Object: "task", Status: TaskStatusQueued, Type: TaskTypeVideoGeneration, Model: body.Model})
+	}))
+	defer server.Close()
+
+	client := New(WithBaseURL(server.URL), WithRetryConfig(RetryConfig{MaxRetries: 0}))
+	_, err := client.Videos.Generate(context.Background(), GenerationRequest{
+		Model:    "video-model",
+		Provider: "runway",
+		Prompt:   "video",
+		Routing: map[string]any{
+			"strategy":           "fallback",
+			"preferred_provider": "runway",
+		},
+	}, WithIdempotencyKey("idem_video_1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTaskAndMultimodalResourcePaths(t *testing.T) {
 	seen := map[string]bool{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -156,8 +156,10 @@ type AudioTranscriptionRequest struct {
 
 type GenerationRequest struct {
 	Model          string                  `json:"model"`
+	Provider       string                  `json:"provider,omitempty"`
 	Prompt         string                  `json:"prompt"`
 	Input          map[string]any          `json:"input,omitempty"`
+	Routing        map[string]any          `json:"routing,omitempty"`
 	SR             *SuperResolutionRequest `json:"sr,omitempty"`
 	WebhookURL     string                  `json:"webhook_url,omitempty"`
 	Metadata       map[string]any          `json:"metadata,omitempty"`
