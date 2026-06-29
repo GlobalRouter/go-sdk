@@ -10,7 +10,7 @@ import (
 
 const (
 	SDKVersion     = "0.1.0"
-	defaultBaseURL = "https://api.globalrouter.ai"
+	defaultBaseURL = "https://api.globalrouter.com"
 	defaultUA      = "globalrouter-go/" + SDKVersion
 )
 
