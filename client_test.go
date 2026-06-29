@@ -12,6 +12,14 @@ import (
 	"time"
 )
 
+func TestNewUsesProductionAPIBaseURL(t *testing.T) {
+	client := New()
+
+	if client.baseURL != "https://api.globalrouter.com" {
+		t.Fatalf("baseURL = %q, want https://api.globalrouter.com", client.baseURL)
+	}
+}
+
 func TestChatCreateSendsBearerJSONAndDecodesResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

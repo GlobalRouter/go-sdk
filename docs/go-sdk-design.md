@@ -49,7 +49,7 @@ Client creation:
 ```go
 client := globalrouter.New(
     globalrouter.WithAPIKey(os.Getenv("GLOBALROUTER_API_KEY")),
-    globalrouter.WithBaseURL("https://api.globalrouter.ai"),
+    globalrouter.WithBaseURL("https://api.globalrouter.com"),
 )
 ```
 
