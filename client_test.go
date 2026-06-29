@@ -120,9 +120,8 @@ func TestModelsListBuildsFilters(t *testing.T) {
 		writeJSON(t, w, ModelsResponse{
 			Object: "list",
 			Data: []Model{{
-				ID:      "openai/gpt-4o-mini",
-				Object:  "model",
-				OwnedBy: "openai",
+				ID:     "openai/gpt-4o-mini",
+				Object: "model",
 				Providers: []ModelProviderSummary{{
 					ID:     "openai",
 					Name:   "OpenAI",

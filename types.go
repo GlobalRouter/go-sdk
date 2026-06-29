@@ -88,7 +88,6 @@ type ModelProviderSummary struct {
 type Model struct {
 	ID                  string                 `json:"id"`
 	Object              string                 `json:"object"`
-	OwnedBy             string                 `json:"owned_by"`
 	Providers           []ModelProviderSummary `json:"providers,omitempty"`
 	DisplayName         string                 `json:"display_name"`
 	Category            string                 `json:"category"`
