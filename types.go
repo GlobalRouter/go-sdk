@@ -137,6 +137,89 @@ type ImageGenerationRequest struct {
 	User           string                  `json:"user,omitempty"`
 }
 
+type ImageTaskStatus string
+
+const (
+	ImageTaskStatusQueued         ImageTaskStatus = "queued"
+	ImageTaskStatusSubmitting     ImageTaskStatus = "submitting"
+	ImageTaskStatusSubmitRetrying ImageTaskStatus = "submit_retrying"
+	ImageTaskStatusSubmitted      ImageTaskStatus = "submitted"
+	ImageTaskStatusInProgress     ImageTaskStatus = "in_progress"
+	ImageTaskStatusPollRetrying   ImageTaskStatus = "poll_retrying"
+	ImageTaskStatusCompleted      ImageTaskStatus = "completed"
+	ImageTaskStatusFailed         ImageTaskStatus = "failed"
+	ImageTaskStatusExpired        ImageTaskStatus = "expired"
+)
+
+type ImageTaskReference struct {
+	Type     string         `json:"type,omitempty"`
+	ImageURL map[string]any `json:"image_url"`
+}
+
+type ImageTaskProvider struct {
+	ProviderID string                    `json:"provider_id,omitempty"`
+	Options    map[string]map[string]any `json:"options,omitempty"`
+}
+
+type ImageTaskCreateRequest struct {
+	Model           string               `json:"model"`
+	Prompt          string               `json:"prompt"`
+	InputReferences []ImageTaskReference `json:"input_references,omitempty"`
+	N               *int                 `json:"n,omitempty"`
+	Size            string               `json:"size,omitempty"`
+	AspectRatio     string               `json:"aspect_ratio,omitempty"`
+	Resolution      string               `json:"resolution,omitempty"`
+	Quality         string               `json:"quality,omitempty"`
+	Seed            *int                 `json:"seed,omitempty"`
+	OutputFormat    string               `json:"output_format,omitempty"`
+	ResponseFormat  string               `json:"response_format,omitempty"`
+	Provider        *ImageTaskProvider   `json:"provider,omitempty"`
+	WebhookURL      string               `json:"webhook_url,omitempty"`
+	Metadata        map[string]any       `json:"metadata,omitempty"`
+	Priority        *int                 `json:"priority,omitempty"`
+	IdempotencyKey  string               `json:"idempotency_key,omitempty"`
+}
+
+type ImageTaskArtifact struct {
+	Index     int     `json:"index"`
+	URL       string  `json:"url,omitempty"`
+	B64JSON   string  `json:"b64_json,omitempty"`
+	MediaType string  `json:"media_type,omitempty"`
+	Width     *int    `json:"width,omitempty"`
+	Height    *int    `json:"height,omitempty"`
+	ExpiresAt *string `json:"expires_at,omitempty"`
+}
+
+type ImageTaskUsage struct {
+	ImageCount    *int           `json:"image_count,omitempty"`
+	BillingStatus string         `json:"billing_status,omitempty"`
+	CostUSD       *float64       `json:"cost_usd,omitempty"`
+	UsageRecordID string         `json:"usage_record_id,omitempty"`
+	Details       map[string]any `json:"details,omitempty"`
+}
+
+type ImageTaskError struct {
+	Code          string         `json:"code"`
+	Message       string         `json:"message"`
+	ProviderError map[string]any `json:"provider_error,omitempty"`
+}
+
+type ImageTaskResponse struct {
+	ID          string              `json:"id"`
+	Object      string              `json:"object"`
+	Status      ImageTaskStatus     `json:"status"`
+	Model       string              `json:"model"`
+	Provider    string              `json:"provider,omitempty"`
+	PollingURL  string              `json:"polling_url,omitempty"`
+	CreatedAt   int64               `json:"created_at,omitempty"`
+	UpdatedAt   int64               `json:"updated_at,omitempty"`
+	CompletedAt *int64              `json:"completed_at,omitempty"`
+	Data        []ImageTaskArtifact `json:"data,omitempty"`
+	Usage       *ImageTaskUsage     `json:"usage,omitempty"`
+	Error       *ImageTaskError     `json:"error,omitempty"`
+	Metadata    map[string]any      `json:"metadata,omitempty"`
+}
+
 type AudioSpeechRequest struct {
 	Model          string   `json:"model"`
 	Input          string   `json:"input"`

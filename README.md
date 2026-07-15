@@ -89,6 +89,8 @@ for {
 - `client.Tasks.Cancel`
 - `client.Tasks.Retry`
 - `client.Images.Generate`
+- `client.Images.CreateTask`
+- `client.Images.GetTask`
 - `client.Audio.CreateSpeech`
 - `client.Audio.CreateTranscription`
 - `client.Videos.Generate`
