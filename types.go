@@ -32,7 +32,7 @@ type ChatRequest struct {
 	Temperature    *float64         `json:"temperature,omitempty"`
 	TopP           *float64         `json:"top_p,omitempty"`
 	MaxTokens      *int             `json:"max_tokens,omitempty"`
-	Stream         bool             `json:"stream,omitempty"`
+	Stream         bool             `json:"stream"`
 	StreamOptions  map[string]any   `json:"stream_options,omitempty"`
 	Tools          []map[string]any `json:"tools,omitempty"`
 	ToolChoice     any              `json:"tool_choice,omitempty"`
@@ -120,21 +120,31 @@ type EmbeddingsRequest struct {
 }
 
 type SuperResolutionRequest struct {
-	Provider   string `json:"provider,omitempty"`
-	Mode       string `json:"mode,omitempty"`
 	Resolution string `json:"resolution,omitempty"`
 }
 
+type ProviderSelection struct {
+	ProviderID string                    `json:"provider_id,omitempty"`
+	Options    map[string]map[string]any `json:"options,omitempty"`
+}
+
 type ImageGenerationRequest struct {
-	Model          string                  `json:"model"`
-	Prompt         string                  `json:"prompt"`
-	N              *int                    `json:"n,omitempty"`
-	Size           string                  `json:"size,omitempty"`
-	ResponseFormat string                  `json:"response_format,omitempty"`
-	Quality        string                  `json:"quality,omitempty"`
-	Style          string                  `json:"style,omitempty"`
-	SR             *SuperResolutionRequest `json:"sr,omitempty"`
-	User           string                  `json:"user,omitempty"`
+	Model             string                  `json:"model"`
+	Prompt            string                  `json:"prompt"`
+	AspectRatio       string                  `json:"aspect_ratio,omitempty"`
+	Background        string                  `json:"background,omitempty"`
+	InputReferences   []ImageTaskReference    `json:"input_references,omitempty"`
+	N                 *int                    `json:"n,omitempty"`
+	OutputCompression *int                    `json:"output_compression,omitempty"`
+	OutputFormat      string                  `json:"output_format,omitempty"`
+	Provider          *ProviderSelection      `json:"provider,omitempty"`
+	Quality           string                  `json:"quality,omitempty"`
+	Resolution        string                  `json:"resolution,omitempty"`
+	Seed              *int                    `json:"seed,omitempty"`
+	Size              string                  `json:"size,omitempty"`
+	Stream            *bool                   `json:"stream,omitempty"`
+	SR                *SuperResolutionRequest `json:"sr,omitempty"`
+	User              string                  `json:"user,omitempty"`
 }
 
 type ImageTaskStatus string
@@ -156,9 +166,12 @@ type ImageTaskReference struct {
 	ImageURL map[string]any `json:"image_url"`
 }
 
-type ImageTaskProvider struct {
-	ProviderID string                    `json:"provider_id,omitempty"`
-	Options    map[string]map[string]any `json:"options,omitempty"`
+type ImageTaskProvider = ProviderSelection
+
+type VideoFrameImage struct {
+	Type      string         `json:"type"`
+	ImageURL  map[string]any `json:"image_url"`
+	FrameType string         `json:"frame_type"`
 }
 
 type ImageTaskCreateRequest struct {
@@ -238,16 +251,29 @@ type AudioTranscriptionRequest struct {
 }
 
 type GenerationRequest struct {
-	Model          string                  `json:"model"`
-	Provider       string                  `json:"provider,omitempty"`
-	Prompt         string                  `json:"prompt"`
-	Input          map[string]any          `json:"input,omitempty"`
-	Routing        map[string]any          `json:"routing,omitempty"`
-	SR             *SuperResolutionRequest `json:"sr,omitempty"`
-	WebhookURL     string                  `json:"webhook_url,omitempty"`
-	Metadata       map[string]any          `json:"metadata,omitempty"`
-	Priority       *int                    `json:"priority,omitempty"`
-	IdempotencyKey string                  `json:"idempotency_key,omitempty"`
+	Model           string                  `json:"model"`
+	Prompt          string                  `json:"prompt"`
+	AspectRatio     string                  `json:"aspect_ratio,omitempty"`
+	CallbackURL     string                  `json:"callback_url,omitempty"`
+	Duration        *int                    `json:"duration,omitempty"`
+	FrameImages     []VideoFrameImage       `json:"frame_images,omitempty"`
+	GenerateAudio   *bool                   `json:"generate_audio,omitempty"`
+	InputReferences []map[string]any        `json:"input_references,omitempty"`
+	Provider        *ProviderSelection      `json:"provider,omitempty"`
+	Resolution      string                  `json:"resolution,omitempty"`
+	SR              *SuperResolutionRequest `json:"sr,omitempty"`
+	Seed            *int                    `json:"seed,omitempty"`
+	Size            string                  `json:"size,omitempty"`
+}
+
+type VideoGenerationResponse struct {
+	ID           string         `json:"id"`
+	PollingURL   string         `json:"polling_url"`
+	Status       string         `json:"status"`
+	Error        string         `json:"error,omitempty"`
+	GenerationID string         `json:"generation_id,omitempty"`
+	UnsignedURLs []string       `json:"unsigned_urls,omitempty"`
+	Usage        map[string]any `json:"usage,omitempty"`
 }
 
 type TaskType string

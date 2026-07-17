@@ -25,7 +25,7 @@ func TestChatCreateSendsBearerJSONAndDecodesResponse(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method = %s, want POST", r.Method)
 		}
-		if r.URL.Path != "/v1/chat/completions" {
+		if r.URL.Path != "/api/v1/chat/completions" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer gr_test" {
@@ -118,7 +118,7 @@ func TestChatCreateDecodesBodyAfterHeadersFlush(t *testing.T) {
 
 func TestModelsListBuildsFilters(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/models" {
+		if r.URL.Path != "/api/v1/models" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		q := r.URL.Query()
@@ -279,8 +279,8 @@ func TestRetryRetriesServerErrorsOnly(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Fatalf("method = %s, want GET", r.Method)
 		}
-		if r.URL.Path != "/v1/models" {
-			t.Fatalf("path = %s, want /v1/models", r.URL.Path)
+		if r.URL.Path != "/api/v1/models" {
+			t.Fatalf("path = %s, want /api/v1/models", r.URL.Path)
 		}
 		if attempts == 1 {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -383,7 +383,7 @@ func TestRetryRetriesPostWithIdempotencyKey(t *testing.T) {
 
 func TestChatStreamParsesServerSentEvents(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/chat/completions" {
+		if r.URL.Path != "/api/v1/chat/completions" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		var body ChatRequest
@@ -516,12 +516,12 @@ func TestTaskEventsPreserveEventNames(t *testing.T) {
 	}
 }
 
-func TestVideosGenerateSendsRoutingControls(t *testing.T) {
+func TestVideosGenerateSendsDocsRequestShape(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method = %s, want POST", r.Method)
 		}
-		if r.URL.Path != "/v1/videos/generations" {
+		if r.URL.Path != "/api/v1/videos" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		if got := r.Header.Get("Idempotency-Key"); got != "idem_video_1" {
@@ -532,25 +532,26 @@ func TestVideosGenerateSendsRoutingControls(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if body.Provider != "runway" {
-			t.Fatalf("provider = %q", body.Provider)
+		if body.Provider == nil || body.Provider.ProviderID != "doubao" {
+			t.Fatalf("provider = %#v", body.Provider)
 		}
-		if body.Routing["strategy"] != "fallback" || body.Routing["preferred_provider"] != "runway" {
-			t.Fatalf("routing = %#v", body.Routing)
+		if body.AspectRatio != "16:9" || body.Resolution != "720p" || body.Duration == nil || *body.Duration != 5 {
+			t.Fatalf("video shape = %#v", body)
 		}
 
-		writeJSON(t, w, TaskResponse{ID: "task_1", Object: "task", Status: TaskStatusQueued, Type: TaskTypeVideoGeneration, Model: body.Model})
+		writeJSON(t, w, VideoGenerationResponse{ID: "job_123", PollingURL: "/api/v1/videos/job_123", Status: "pending"})
 	}))
 	defer server.Close()
 
 	client := New(WithBaseURL(server.URL), WithRetryConfig(RetryConfig{MaxRetries: 0}))
 	_, err := client.Videos.Generate(context.Background(), GenerationRequest{
-		Model:    "video-model",
-		Provider: "runway",
-		Prompt:   "video",
-		Routing: map[string]any{
-			"strategy":           "fallback",
-			"preferred_provider": "runway",
+		Model:       "doubao-seedance-1-0-pro-fast-251015",
+		Prompt:      "video",
+		AspectRatio: "16:9",
+		Duration:    Int(5),
+		Resolution:  "720p",
+		Provider: &ProviderSelection{
+			ProviderID: "doubao",
 		},
 	}, WithIdempotencyKey("idem_video_1"))
 	if err != nil {
@@ -562,7 +563,7 @@ func TestTaskAndMultimodalResourcePaths(t *testing.T) {
 	seen := map[string]bool{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen[r.Method+" "+r.URL.Path] = true
-		if r.URL.Path == "/v1/videos/generations" && r.Header.Get("Idempotency-Key") != "idem_1" {
+		if r.URL.Path == "/api/v1/videos" && r.Header.Get("Idempotency-Key") != "idem_1" {
 			t.Fatalf("missing idempotency header")
 		}
 		if r.Method == http.MethodGet && r.URL.Path == "/v1/tasks" {
@@ -576,7 +577,25 @@ func TestTaskAndMultimodalResourcePaths(t *testing.T) {
 			writeJSON(t, w, TaskBatchResponse{BatchID: "batch_1", Items: []TaskResponse{}, Total: 0, Page: 1, PageSize: 0})
 			return
 		}
-		if strings.Contains(r.URL.Path, "/tasks/") || r.URL.Path == "/v1/tasks" || r.URL.Path == "/v1/videos/generations" || r.URL.Path == "/v1/3d/generations" {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/image-tasks" {
+			if r.Header.Get("Idempotency-Key") != "client-image-task-001" {
+				t.Fatalf("missing image task idempotency header")
+			}
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := body["idempotency_key"]; ok {
+				t.Fatalf("idempotency_key must not be sent in body: %#v", body)
+			}
+			writeJSON(t, w, ImageTaskResponse{ID: "imgtask_1", Object: "image.task", Status: ImageTaskStatusQueued, Model: "m"})
+			return
+		}
+		if r.URL.Path == "/api/v1/videos" {
+			writeJSON(t, w, VideoGenerationResponse{ID: "job_123", PollingURL: "/api/v1/videos/job_123", Status: "pending"})
+			return
+		}
+		if strings.Contains(r.URL.Path, "/tasks/") || r.URL.Path == "/v1/tasks" || r.URL.Path == "/v1/3d/generations" {
 			writeJSON(t, w, TaskResponse{ID: "task_1", Object: "task", Status: TaskStatusQueued, Progress: 0.25, Type: TaskTypeVideoGeneration, Model: "m"})
 			return
 		}
@@ -594,6 +613,7 @@ func TestTaskAndMultimodalResourcePaths(t *testing.T) {
 	_, _ = client.Tasks.Cancel(ctx, "task_1")
 	_, _ = client.Tasks.Retry(ctx, "task_1")
 	_, _ = client.Images.Generate(ctx, ImageGenerationRequest{Model: "m", Prompt: "image"})
+	_, _ = client.Images.CreateTask(ctx, ImageTaskCreateRequest{Model: "m", Prompt: "image", IdempotencyKey: "client-image-task-001"})
 	speechRes, _ := client.Audio.CreateSpeech(ctx, AudioSpeechRequest{Model: "m", Input: "hello", Voice: "alloy"})
 	if speechRes != nil {
 		_ = speechRes.Body.Close()
@@ -611,12 +631,13 @@ func TestTaskAndMultimodalResourcePaths(t *testing.T) {
 		"GET /v1/tasks/batch/batch_1",
 		"POST /v1/tasks/task_1/cancel",
 		"POST /v1/tasks/task_1/retry",
-		"POST /v1/images/generations",
+		"POST /api/v1/images",
+		"POST /api/v1/image-tasks",
 		"POST /v1/audio/speech",
 		"POST /v1/audio/transcriptions",
-		"POST /v1/videos/generations",
+		"POST /api/v1/videos",
 		"POST /v1/3d/generations",
-		"POST /v1/embeddings",
+		"POST /api/v1/embeddings",
 	} {
 		if !seen[key] {
 			t.Fatalf("did not see %s; seen=%v", key, seen)
