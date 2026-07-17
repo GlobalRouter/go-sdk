@@ -20,6 +20,59 @@ func TestNewUsesProductionAPIBaseURL(t *testing.T) {
 	}
 }
 
+func TestRequestJSONSendsCustomPathAndDecodesResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/v1/gemini" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer gr_test" {
+			t.Fatalf("authorization header = %q", got)
+		}
+		if got := r.Header.Get("X-Example"); got != "docs" {
+			t.Fatalf("X-Example header = %q", got)
+		}
+
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body["model"] != "gemini-3-flash-preview" {
+			t.Fatalf("model = %v", body["model"])
+		}
+
+		writeJSON(t, w, map[string]any{
+			"id":     "raw_123",
+			"object": "example.response",
+		})
+	}))
+	defer server.Close()
+
+	client := New(
+		WithAPIKey("gr_test"),
+		WithBaseURL(server.URL),
+		WithRetryConfig(RetryConfig{MaxRetries: 0}),
+	)
+
+	var out map[string]any
+	err := client.RequestJSON(
+		context.Background(),
+		http.MethodPost,
+		"/v1/gemini",
+		map[string]any{"model": "gemini-3-flash-preview"},
+		&out,
+		WithHeader("X-Example", "docs"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["id"] != "raw_123" {
+		t.Fatalf("unexpected response: %#v", out)
+	}
+}
+
 func TestChatCreateSendsBearerJSONAndDecodesResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
