@@ -62,12 +62,6 @@ func requestBody() globalrouter.ImageGenerationRequest {
 			Type:     "image_url",
 			ImageURL: map[string]any{"url": "https://example.com/reference.png"},
 		}},
-		Provider: &globalrouter.ProviderSelection{
-			ProviderID: "doubao",
-			Options: map[string]map[string]any{
-				"doubao": {"some_provider_option": "value"},
-			},
-		},
 		Background:        "transparent",
 		AspectRatio:       "1:1",
 		Resolution:        "2K",
