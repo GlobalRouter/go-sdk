@@ -26,7 +26,7 @@ func (r *ModelsResource) List(ctx context.Context, options *ListModelsOptions, o
 		addBool(params, "available_only", options.AvailableOnly)
 	}
 	var out ModelsResponse
-	if err := r.client.doJSON(ctx, http.MethodGet, "/v1/models", params, nil, &out, opts...); err != nil {
+	if err := r.client.doJSON(ctx, http.MethodGet, "/api/v1/models", params, nil, &out, opts...); err != nil {
 		return nil, err
 	}
 	return &out, nil
