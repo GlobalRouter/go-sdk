@@ -32,7 +32,7 @@ type ChatRequest struct {
 	Temperature    *float64         `json:"temperature,omitempty"`
 	TopP           *float64         `json:"top_p,omitempty"`
 	MaxTokens      *int             `json:"max_tokens,omitempty"`
-	Stream         bool             `json:"stream,omitempty"`
+	Stream         bool             `json:"stream"`
 	StreamOptions  map[string]any   `json:"stream_options,omitempty"`
 	Tools          []map[string]any `json:"tools,omitempty"`
 	ToolChoice     any              `json:"tool_choice,omitempty"`
@@ -264,6 +264,16 @@ type GenerationRequest struct {
 	SR              *SuperResolutionRequest `json:"sr,omitempty"`
 	Seed            *int                    `json:"seed,omitempty"`
 	Size            string                  `json:"size,omitempty"`
+}
+
+type VideoGenerationResponse struct {
+	ID           string         `json:"id"`
+	PollingURL   string         `json:"polling_url"`
+	Status       string         `json:"status"`
+	Error        string         `json:"error,omitempty"`
+	GenerationID string         `json:"generation_id,omitempty"`
+	UnsignedURLs []string       `json:"unsigned_urls,omitempty"`
+	Usage        map[string]any `json:"usage,omitempty"`
 }
 
 type TaskType string

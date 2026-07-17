@@ -539,7 +539,7 @@ func TestVideosGenerateSendsDocsRequestShape(t *testing.T) {
 			t.Fatalf("video shape = %#v", body)
 		}
 
-		writeJSON(t, w, TaskResponse{ID: "job_123", Object: "video.generation", Status: TaskStatusPending, Model: body.Model})
+		writeJSON(t, w, VideoGenerationResponse{ID: "job_123", PollingURL: "/api/v1/videos/job_123", Status: "pending"})
 	}))
 	defer server.Close()
 
@@ -591,7 +591,11 @@ func TestTaskAndMultimodalResourcePaths(t *testing.T) {
 			writeJSON(t, w, ImageTaskResponse{ID: "imgtask_1", Object: "image.task", Status: ImageTaskStatusQueued, Model: "m"})
 			return
 		}
-		if strings.Contains(r.URL.Path, "/tasks/") || r.URL.Path == "/v1/tasks" || r.URL.Path == "/api/v1/videos" || r.URL.Path == "/v1/3d/generations" {
+		if r.URL.Path == "/api/v1/videos" {
+			writeJSON(t, w, VideoGenerationResponse{ID: "job_123", PollingURL: "/api/v1/videos/job_123", Status: "pending"})
+			return
+		}
+		if strings.Contains(r.URL.Path, "/tasks/") || r.URL.Path == "/v1/tasks" || r.URL.Path == "/v1/3d/generations" {
 			writeJSON(t, w, TaskResponse{ID: "task_1", Object: "task", Status: TaskStatusQueued, Progress: 0.25, Type: TaskTypeVideoGeneration, Model: "m"})
 			return
 		}

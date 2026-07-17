@@ -24,11 +24,7 @@ func main() {
 			opts = append(opts, globalrouter.WithBaseURL(baseURL))
 		}
 		client := globalrouter.New(opts...)
-		response, err := client.Images.CreateTask(
-			ctx,
-			requestBody(),
-			globalrouter.WithIdempotencyKey("client-image-task-001"),
-		)
+		response, err := client.Chat.Create(ctx, requestBody())
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -44,12 +40,12 @@ func main() {
 		globalrouter.WithRetryConfig(globalrouter.RetryConfig{MaxRetries: 0}),
 	)
 
-	response, err := client.Images.CreateTask(ctx, requestBody(), globalrouter.WithIdempotencyKey("client-image-task-001"))
+	response, err := client.Chat.Create(ctx, requestBody())
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Println("# POST /api/v1/image-tasks")
+	fmt.Println("# POST /api/v1/chat/completions")
 	fmt.Println("\n# Request JSON")
 	printJSONFromBytes(capture.bodies[0])
 	fmt.Println("\n# cURL")
@@ -58,26 +54,14 @@ func main() {
 	printJSON(response)
 }
 
-func requestBody() globalrouter.ImageTaskCreateRequest {
-	return globalrouter.ImageTaskCreateRequest{
-		Model:  "jimeng_t2i_v31",
-		Prompt: "生成 4 张电商商品图，白底，高级感",
-		InputReferences: []globalrouter.ImageTaskReference{{
-			Type:     "image_url",
-			ImageURL: map[string]any{"url": "https://example.com/reference.png"},
+func requestBody() globalrouter.ChatRequest {
+	return globalrouter.ChatRequest{
+		Model: "qwen3-32b",
+		Messages: []globalrouter.Message{{
+			Role:    globalrouter.RoleUser,
+			Content: "用三句话介绍 GlobalRouter。",
 		}},
-		N:    globalrouter.Int(4),
-		Size: "1024x1024",
-		Provider: &globalrouter.ProviderSelection{
-			ProviderID: "doubao_gr",
-			Options: map[string]map[string]any{
-				"doubao_gr": {
-					"watermark":    false,
-					"force_single": false,
-				},
-			},
-		},
-		Metadata: map[string]any{"client_request_id": "client-001"},
+		Stream: false,
 	}
 }
 
@@ -97,17 +81,24 @@ func (c *captureClient) Do(req *http.Request) (*http.Response, error) {
 	c.bodies = append(c.bodies, bodyBytes)
 
 	response := map[string]any{
-		"id":          "imgtask_xxx",
-		"object":      "image.task",
-		"status":      "queued",
-		"model":       "jimeng_t2i_v31",
-		"provider":    "doubao_gr",
-		"polling_url": "/api/v1/image-tasks/imgtask_xxx",
-		"created_at":  1770000000,
-		"updated_at":  1770000000,
-		"data":        []any{},
-		"usage":       map[string]any{"billing_status": "unreserved"},
-		"metadata":    map[string]any{"client_request_id": "client-001"},
+		"id":      "chatcmpl_123",
+		"object":  "chat.completion",
+		"created": 1748372400,
+		"model":   "qwen3-32b",
+		"choices": []map[string]any{{
+			"index": 0,
+			"message": map[string]any{
+				"role":    "assistant",
+				"content": "GlobalRouter 是统一模型路由层。它用同一套 API 连接不同模型和 Provider。你可以通过模型 ID、鉴权和参数控制完成聊天、图片与视频生成。",
+			},
+			"finish_reason": "stop",
+		}},
+		"usage": map[string]any{
+			"prompt_tokens":     18,
+			"completion_tokens": 46,
+			"total_tokens":      64,
+			"cost":              0.0012,
+		},
 	}
 	data, err := json.Marshal(response)
 	if err != nil {
