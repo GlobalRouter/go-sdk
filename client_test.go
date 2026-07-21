@@ -644,6 +644,209 @@ func TestTaskAndMultimodalResourcePaths(t *testing.T) {
 	}
 }
 
+func TestSeedanceCompatibilityResourceUsesDocumentedPathsAndCasing(t *testing.T) {
+	seen := map[string]bool{}
+	videoGetAttempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen[r.Method+" "+r.URL.Path] = true
+		if got := r.Header.Get("Authorization"); got != "Bearer gr_seedance_test" {
+			t.Fatalf("authorization header = %q", got)
+		}
+		if r.URL.Path == "/v1/video/generations" && r.Header.Get("Idempotency-Key") != "seedance-idem-1" {
+			t.Fatalf("idempotency header = %q", r.Header.Get("Idempotency-Key"))
+		}
+
+		switch r.Method + " " + r.URL.Path {
+		case "POST /v1/video/generations":
+			var body SeedanceVideoGenerationRequest
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Model != "doubao-seedance-2-0-260128" || len(body.Content) != 1 || body.Content[0].Text != "a quiet product demo" {
+				t.Fatalf("video request = %#v", body)
+			}
+			writeJSON(t, w, SeedanceVideoGenerationResponse{
+				Code: "success",
+				Data: SeedanceVideoGenerationData{TaskID: "task_gr_123", Status: "queued"},
+			})
+		case "GET /v1/video/generations/task_gr_123":
+			videoGetAttempts++
+			if videoGetAttempts == 1 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			writeJSON(t, w, SeedanceVideoGenerationResponse{
+				Code: "success",
+				Data: SeedanceVideoGenerationData{
+					TaskID:    "task_gr_123",
+					Status:    "succeeded",
+					Artifacts: []SeedanceVideoArtifact{{URL: "https://signed.globalrouter.test/videos/task_gr_123.mp4"}},
+				},
+			})
+		case "POST /api/v3/assets/groups":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body["Name"] != "product references" || body["Description"] != "launch campaign" {
+				t.Fatalf("group request = %#v", body)
+			}
+			if _, ok := body["name"]; ok {
+				t.Fatalf("group request used lowercase field: %#v", body)
+			}
+			writeJSON(t, w, SeedanceAssetGroupResponse{Code: "success", Data: SeedanceAssetGroupData{ID: "group_gr_123"}})
+		case "POST /api/v3/assets":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body["URL"] != "https://cdn.example.test/reference.png" || body["AssetType"] != "Image" || body["GroupId"] != "group_gr_123" || body["Name"] != "product reference" {
+				t.Fatalf("asset request = %#v", body)
+			}
+			if _, ok := body["asset_type"]; ok {
+				t.Fatalf("asset request used snake case field: %#v", body)
+			}
+			writeJSON(t, w, SeedanceAssetResponse{Code: "success", Data: SeedanceAssetData{ID: "asset_gr_123"}})
+		case "POST /api/v3/assets/get":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body["Id"] != "asset_gr_123" {
+				t.Fatalf("asset get request = %#v", body)
+			}
+			writeJSON(t, w, SeedanceAssetResponse{Code: "success", Data: SeedanceAssetData{ID: "asset_gr_123", URL: "https://signed.globalrouter.test/assets/asset_gr_123.png"}})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := New(
+		WithAPIKey("gr_seedance_test"),
+		WithBaseURL(server.URL),
+		WithRetryConfig(RetryConfig{MaxRetries: 1, MinDelay: time.Millisecond}),
+	)
+	if client.Seedance == nil {
+		t.Fatal("Seedance resource was not initialized")
+	}
+	ctx := context.Background()
+	created, err := client.Seedance.CreateVideoGeneration(ctx, SeedanceVideoGenerationRequest{
+		Model:   "doubao-seedance-2-0-260128",
+		Content: []SeedanceVideoContent{{Type: "text", Text: "a quiet product demo"}},
+	}, WithIdempotencyKey("seedance-idem-1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Data.TaskID != "task_gr_123" || created.Data.Status != "queued" {
+		t.Fatalf("create response = %#v", created)
+	}
+
+	gotVideo, err := client.Seedance.GetVideoGeneration(ctx, "task_gr_123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gotVideo.Data.Artifacts) != 1 || gotVideo.Data.Artifacts[0].URL == "" {
+		t.Fatalf("video response = %#v", gotVideo)
+	}
+	if videoGetAttempts != 2 {
+		t.Fatalf("video get attempts = %d, want 2", videoGetAttempts)
+	}
+
+	group, err := client.Seedance.CreateAssetGroup(ctx, SeedanceAssetGroupCreateRequest{
+		Model:       "doubao-seedance-2-0-260128",
+		Name:        "product references",
+		Description: "launch campaign",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if group.Data.ID != "group_gr_123" {
+		t.Fatalf("group response = %#v", group)
+	}
+
+	asset, err := client.Seedance.CreateAsset(ctx, SeedanceAssetCreateRequest{
+		Model:     "doubao-seedance-2-0-260128",
+		URL:       "https://cdn.example.test/reference.png",
+		AssetType: SeedanceAssetTypeImage,
+		GroupID:   "group_gr_123",
+		Name:      "product reference",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if asset.Data.ID != "asset_gr_123" {
+		t.Fatalf("asset response = %#v", asset)
+	}
+
+	fetched, err := client.Seedance.GetAsset(ctx, SeedanceAssetGetRequest{
+		Model: "doubao-seedance-2-0-260128",
+		ID:    "asset_gr_123",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fetched.Data.URL == "" {
+		t.Fatalf("asset get response = %#v", fetched)
+	}
+
+	for _, key := range []string{
+		"POST /v1/video/generations",
+		"GET /v1/video/generations/task_gr_123",
+		"POST /api/v3/assets/groups",
+		"POST /api/v3/assets",
+		"POST /api/v3/assets/get",
+	} {
+		if !seen[key] {
+			t.Fatalf("did not see %s; seen=%v", key, seen)
+		}
+	}
+}
+
+func TestSeedanceCompatibilityPropagatesAudioOnlyValidationErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/video/generations" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		var body SeedanceVideoGenerationRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if len(body.Content) != 1 || body.Content[0].Type != "audio_url" || body.Content[0].Role != "reference_audio" {
+			t.Fatalf("audio-only request = %#v", body)
+		}
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		writeJSON(t, w, map[string]any{
+			"error": map[string]any{
+				"code":    "VALIDATION_ERROR",
+				"message": "content audio cannot be the sole item",
+				"type":    "validation_error",
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := New(WithBaseURL(server.URL), WithRetryConfig(RetryConfig{MaxRetries: 0}))
+	_, err := client.Seedance.CreateVideoGeneration(context.Background(), SeedanceVideoGenerationRequest{
+		Model: "doubao-seedance-2-0-260128",
+		Content: []SeedanceVideoContent{{
+			Type:     "audio_url",
+			AudioURL: &SeedanceMediaURL{URL: "https://cdn.example.test/reference.wav"},
+			Role:     "reference_audio",
+		}},
+	})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error type = %T", err)
+	}
+	if apiErr.StatusCode != http.StatusUnprocessableEntity || apiErr.Code != "VALIDATION_ERROR" {
+		t.Fatalf("api error = %#v", apiErr)
+	}
+}
+
 func writeJSON(t *testing.T, w http.ResponseWriter, value any) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")

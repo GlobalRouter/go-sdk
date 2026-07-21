@@ -275,6 +275,168 @@ type VideoGenerationResponse struct {
 	Usage        map[string]any `json:"usage,omitempty"`
 }
 
+// SeedanceModel identifies a Seedance model supported by the compatibility API.
+type SeedanceModel string
+
+const (
+	SeedanceModelStandard SeedanceModel = "doubao-seedance-2-0-260128"
+	SeedanceModelFast     SeedanceModel = "doubao-seedance-2-0-fast-260128"
+)
+
+type SeedanceVideoContentType string
+
+const (
+	SeedanceVideoContentText     SeedanceVideoContentType = "text"
+	SeedanceVideoContentImageURL SeedanceVideoContentType = "image_url"
+	SeedanceVideoContentVideoURL SeedanceVideoContentType = "video_url"
+	SeedanceVideoContentAudioURL SeedanceVideoContentType = "audio_url"
+)
+
+type SeedanceVideoContentRole string
+
+const (
+	SeedanceVideoRoleFirstFrame     SeedanceVideoContentRole = "first_frame"
+	SeedanceVideoRoleReferenceImage SeedanceVideoContentRole = "reference_image"
+	SeedanceVideoRoleReferenceVideo SeedanceVideoContentRole = "reference_video"
+	SeedanceVideoRoleReferenceAudio SeedanceVideoContentRole = "reference_audio"
+)
+
+type SeedanceVideoRatio string
+
+const (
+	SeedanceVideoRatio16x9     SeedanceVideoRatio = "16:9"
+	SeedanceVideoRatio4x3      SeedanceVideoRatio = "4:3"
+	SeedanceVideoRatio1x1      SeedanceVideoRatio = "1:1"
+	SeedanceVideoRatio3x4      SeedanceVideoRatio = "3:4"
+	SeedanceVideoRatio9x16     SeedanceVideoRatio = "9:16"
+	SeedanceVideoRatio21x9     SeedanceVideoRatio = "21:9"
+	SeedanceVideoRatioAdaptive SeedanceVideoRatio = "adaptive"
+)
+
+type SeedanceVideoResolution string
+
+const (
+	SeedanceVideoResolution480p  SeedanceVideoResolution = "480p"
+	SeedanceVideoResolution720p  SeedanceVideoResolution = "720p"
+	SeedanceVideoResolution1080p SeedanceVideoResolution = "1080p"
+)
+
+// SeedanceMediaURL is used for image, video, and audio content URLs.
+type SeedanceMediaURL struct {
+	URL string `json:"url"`
+}
+
+// SeedanceVideoContent is one compatibility API content item. Set Text for
+// text items, or the matching URL field and Role for media items.
+type SeedanceVideoContent struct {
+	Type     SeedanceVideoContentType `json:"type"`
+	Text     string                   `json:"text,omitempty"`
+	ImageURL *SeedanceMediaURL        `json:"image_url,omitempty"`
+	VideoURL *SeedanceMediaURL        `json:"video_url,omitempty"`
+	AudioURL *SeedanceMediaURL        `json:"audio_url,omitempty"`
+	Role     SeedanceVideoContentRole `json:"role,omitempty"`
+}
+
+// SeedanceVideoGenerationRequest is the strict request shape for the
+// singular /v1/video/generations compatibility endpoint.
+type SeedanceVideoGenerationRequest struct {
+	Model                 SeedanceModel           `json:"model"`
+	Content               []SeedanceVideoContent  `json:"content"`
+	Ratio                 SeedanceVideoRatio      `json:"ratio,omitempty"`
+	Resolution            SeedanceVideoResolution `json:"resolution,omitempty"`
+	Duration              *int                    `json:"duration,omitempty"`
+	GenerateAudio         *bool                   `json:"generate_audio,omitempty"`
+	ReturnLastFrame       *bool                   `json:"return_last_frame,omitempty"`
+	ExecutionExpiresAfter *int                    `json:"execution_expires_after,omitempty"`
+	Seed                  *int64                  `json:"seed,omitempty"`
+	Watermark             *bool                   `json:"watermark,omitempty"`
+	SafetyIdentifier      string                  `json:"safety_identifier,omitempty"`
+	CallbackURL           string                  `json:"callback_url,omitempty"`
+}
+
+type SeedanceVideoArtifact struct {
+	URL string `json:"url"`
+}
+
+type SeedanceVideoUsage struct {
+	PromptTokens           *int     `json:"prompt_tokens,omitempty"`
+	CompletionTokens       *int     `json:"completion_tokens,omitempty"`
+	TotalTokens            *int     `json:"total_tokens,omitempty"`
+	Cost                   *float64 `json:"cost,omitempty"`
+	Currency               string   `json:"currency,omitempty"`
+	CostUSD                *float64 `json:"cost_usd,omitempty"`
+	CostCNY                *float64 `json:"cost_cny,omitempty"`
+	VideoGenerationCostCNY *float64 `json:"video_generation_cost_cny,omitempty"`
+	SuperResolutionCostCNY *float64 `json:"sr_cost_cny,omitempty"`
+}
+
+type SeedanceVideoError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type SeedanceVideoGenerationData struct {
+	TaskID    string                  `json:"task_id"`
+	Status    string                  `json:"status"`
+	Artifacts []SeedanceVideoArtifact `json:"artifacts,omitempty"`
+	Usage     *SeedanceVideoUsage     `json:"usage,omitempty"`
+	Error     *SeedanceVideoError     `json:"error,omitempty"`
+}
+
+type SeedanceVideoGenerationResponse struct {
+	Code    string                      `json:"code"`
+	Message string                      `json:"message"`
+	Data    SeedanceVideoGenerationData `json:"data"`
+}
+
+type SeedanceAssetType string
+
+const (
+	SeedanceAssetTypeImage SeedanceAssetType = "Image"
+	SeedanceAssetTypeVideo SeedanceAssetType = "Video"
+	SeedanceAssetTypeAudio SeedanceAssetType = "Audio"
+)
+
+type SeedanceAssetGroupCreateRequest struct {
+	Model       SeedanceModel `json:"model"`
+	Name        string        `json:"Name"`
+	Description string        `json:"Description,omitempty"`
+}
+
+type SeedanceAssetCreateRequest struct {
+	Model     SeedanceModel     `json:"model"`
+	URL       string            `json:"URL"`
+	AssetType SeedanceAssetType `json:"AssetType"`
+	GroupID   string            `json:"GroupId,omitempty"`
+	Name      string            `json:"Name,omitempty"`
+}
+
+type SeedanceAssetGetRequest struct {
+	Model SeedanceModel `json:"model"`
+	ID    string        `json:"Id"`
+}
+
+type SeedanceAssetGroupData struct {
+	ID string `json:"id"`
+}
+
+type SeedanceAssetData struct {
+	ID  string `json:"id"`
+	URL string `json:"url,omitempty"`
+}
+
+type SeedanceAssetGroupResponse struct {
+	Code    string                 `json:"code"`
+	Message string                 `json:"message"`
+	Data    SeedanceAssetGroupData `json:"data"`
+}
+
+type SeedanceAssetResponse struct {
+	Code    string            `json:"code"`
+	Message string            `json:"message"`
+	Data    SeedanceAssetData `json:"data"`
+}
+
 type TaskType string
 
 const (

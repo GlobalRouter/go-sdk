@@ -94,6 +94,11 @@ for {
 - `client.Audio.CreateSpeech`
 - `client.Audio.CreateTranscription`
 - `client.Videos.Generate`
+- `client.Seedance.CreateVideoGeneration`
+- `client.Seedance.GetVideoGeneration`
+- `client.Seedance.CreateAssetGroup`
+- `client.Seedance.CreateAsset`
+- `client.Seedance.GetAsset`
 - `client.ThreeD.Generate`
 
 ## Configuration

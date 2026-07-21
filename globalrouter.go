@@ -33,6 +33,7 @@ type Client struct {
 	Images     *ImagesResource
 	Audio      *AudioResource
 	Videos     *VideosResource
+	Seedance   *SeedanceCompatibilityResource
 	ThreeD     *ThreeDResource
 }
 
@@ -60,6 +61,7 @@ func New(opts ...SDKOption) *Client {
 	c.Images = &ImagesResource{client: c}
 	c.Audio = &AudioResource{client: c}
 	c.Videos = &VideosResource{client: c}
+	c.Seedance = &SeedanceCompatibilityResource{client: c}
 	c.ThreeD = &ThreeDResource{client: c}
 	return c
 }
