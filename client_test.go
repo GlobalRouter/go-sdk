@@ -125,26 +125,23 @@ func TestModelsListBuildsFilters(t *testing.T) {
 		if q.Get("modality") != "text" || q.Get("capability") != "chat" || q.Get("provider") != "openai" || q.Get("available_only") != "true" {
 			t.Fatalf("query = %s", r.URL.RawQuery)
 		}
-		writeJSON(t, w, ModelsResponse{
-			Object: "list",
-			Data: []Model{{
-				ID:     "openai/gpt-4o-mini",
-				Object: "model",
-				Providers: []ModelProviderSummary{{
-					ID:     "openai",
-					Name:   "OpenAI",
-					Status: "active",
-				}},
-				DisplayName:         "GPT-4o mini",
-				Category:            "chat",
-				Modality:            "text",
-				Capabilities:        []string{"chat"},
-				InputModalities:     []string{"text"},
-				OutputModalities:    []string{"text"},
-				SupportedParameters: []string{"temperature"},
-				ExecutionMode:       "sync",
-				BillingUnit:         "token",
-				Routable:            true,
+		writeJSON(t, w, map[string]any{
+			"object": "list",
+			"data": []any{map[string]any{
+				"id":                   "openai/gpt-4o-mini",
+				"object":               "model",
+				"owned_by":             "openai",
+				"providers":            []any{map[string]any{"id": "openai", "name": "OpenAI", "status": "active"}},
+				"display_name":         "GPT-4o mini",
+				"category":             "chat",
+				"modality":             "text",
+				"capabilities":         []string{"chat"},
+				"input_modalities":     []string{"text"},
+				"output_modalities":    []string{"text"},
+				"supported_parameters": []string{"temperature"},
+				"execution_mode":       "sync",
+				"billing_unit":         "token",
+				"routable":             true,
 			}},
 		})
 	}))
@@ -165,6 +162,9 @@ func TestModelsListBuildsFilters(t *testing.T) {
 	}
 	if len(res.Data[0].Providers) != 1 || res.Data[0].Providers[0].ID != "openai" {
 		t.Fatalf("providers = %#v", res.Data[0].Providers)
+	}
+	if res.Data[0].OwnedBy != "openai" {
+		t.Fatalf("owned_by = %q, want openai", res.Data[0].OwnedBy)
 	}
 }
 
@@ -665,9 +665,14 @@ func TestSeedanceCompatibilityResourceUsesDocumentedPathsAndCasing(t *testing.T)
 			if body.Model != "doubao-seedance-2-0-260128" || len(body.Content) != 1 || body.Content[0].Text != "a quiet product demo" {
 				t.Fatalf("video request = %#v", body)
 			}
-			writeJSON(t, w, SeedanceVideoGenerationResponse{
-				Code: "success",
-				Data: SeedanceVideoGenerationData{TaskID: "task_gr_123", Status: "queued"},
+			writeJSON(t, w, map[string]any{
+				"id":         "video_gr_123",
+				"task_id":    "task_gr_123",
+				"object":     "video.generation",
+				"model":      "doubao-seedance-2-0-260128",
+				"status":     "queued",
+				"progress":   0,
+				"created_at": "2026-07-22T06:30:00Z",
 			})
 		case "GET /v1/video/generations/task_gr_123":
 			videoGetAttempts++
@@ -694,7 +699,7 @@ func TestSeedanceCompatibilityResourceUsesDocumentedPathsAndCasing(t *testing.T)
 			if _, ok := body["name"]; ok {
 				t.Fatalf("group request used lowercase field: %#v", body)
 			}
-			writeJSON(t, w, SeedanceAssetGroupResponse{Code: "success", Data: SeedanceAssetGroupData{ID: "group_gr_123"}})
+			writeJSON(t, w, map[string]any{"id": "group_gr_123", "name": "product references"})
 		case "POST /api/v3/assets":
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -706,7 +711,7 @@ func TestSeedanceCompatibilityResourceUsesDocumentedPathsAndCasing(t *testing.T)
 			if _, ok := body["asset_type"]; ok {
 				t.Fatalf("asset request used snake case field: %#v", body)
 			}
-			writeJSON(t, w, SeedanceAssetResponse{Code: "success", Data: SeedanceAssetData{ID: "asset_gr_123"}})
+			writeJSON(t, w, map[string]any{"id": "asset_gr_123"})
 		case "POST /api/v3/assets/get":
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -715,7 +720,14 @@ func TestSeedanceCompatibilityResourceUsesDocumentedPathsAndCasing(t *testing.T)
 			if body["Id"] != "asset_gr_123" {
 				t.Fatalf("asset get request = %#v", body)
 			}
-			writeJSON(t, w, SeedanceAssetResponse{Code: "success", Data: SeedanceAssetData{ID: "asset_gr_123", URL: "https://signed.globalrouter.test/assets/asset_gr_123.png"}})
+			writeJSON(t, w, map[string]any{
+				"id":         "asset_gr_123",
+				"url":        "https://signed.globalrouter.test/assets/asset_gr_123.png",
+				"name":       "product reference",
+				"asset_type": "Image",
+				"group_id":   "group_gr_123",
+				"status":     "ready",
+			})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -738,7 +750,7 @@ func TestSeedanceCompatibilityResourceUsesDocumentedPathsAndCasing(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.Data.TaskID != "task_gr_123" || created.Data.Status != "queued" {
+	if created.ID != "video_gr_123" || created.TaskID != "task_gr_123" || created.Object != "video.generation" || created.Model != "doubao-seedance-2-0-260128" || created.Status != "queued" || created.Progress != 0 || created.CreatedAt != "2026-07-22T06:30:00Z" {
 		t.Fatalf("create response = %#v", created)
 	}
 
@@ -761,7 +773,7 @@ func TestSeedanceCompatibilityResourceUsesDocumentedPathsAndCasing(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if group.Data.ID != "group_gr_123" {
+	if group.ID != "group_gr_123" || group.Name != "product references" {
 		t.Fatalf("group response = %#v", group)
 	}
 
@@ -775,7 +787,7 @@ func TestSeedanceCompatibilityResourceUsesDocumentedPathsAndCasing(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if asset.Data.ID != "asset_gr_123" {
+	if asset.ID != "asset_gr_123" {
 		t.Fatalf("asset response = %#v", asset)
 	}
 
@@ -786,7 +798,7 @@ func TestSeedanceCompatibilityResourceUsesDocumentedPathsAndCasing(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fetched.Data.URL == "" {
+	if fetched.ID != "asset_gr_123" || fetched.URL != "https://signed.globalrouter.test/assets/asset_gr_123.png" || fetched.Name != "product reference" || fetched.AssetType != SeedanceAssetTypeImage || fetched.GroupID != "group_gr_123" || fetched.Status != "ready" {
 		t.Fatalf("asset get response = %#v", fetched)
 	}
 

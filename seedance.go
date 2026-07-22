@@ -16,8 +16,8 @@ func (r *SeedanceCompatibilityResource) CreateVideoGeneration(
 	ctx context.Context,
 	request SeedanceVideoGenerationRequest,
 	opts ...RequestOption,
-) (*SeedanceVideoGenerationResponse, error) {
-	var out SeedanceVideoGenerationResponse
+) (*SeedanceVideoGenerationCreateResponse, error) {
+	var out SeedanceVideoGenerationCreateResponse
 	if err := r.client.doJSON(ctx, http.MethodPost, "/v1/video/generations", nil, request, &out, opts...); err != nil {
 		return nil, err
 	}
@@ -40,8 +40,8 @@ func (r *SeedanceCompatibilityResource) CreateAssetGroup(
 	ctx context.Context,
 	request SeedanceAssetGroupCreateRequest,
 	opts ...RequestOption,
-) (*SeedanceAssetGroupResponse, error) {
-	var out SeedanceAssetGroupResponse
+) (*SeedanceAssetGroupCreateResponse, error) {
+	var out SeedanceAssetGroupCreateResponse
 	if err := r.client.doJSON(ctx, http.MethodPost, "/api/v3/assets/groups", nil, request, &out, opts...); err != nil {
 		return nil, err
 	}
@@ -52,8 +52,8 @@ func (r *SeedanceCompatibilityResource) CreateAsset(
 	ctx context.Context,
 	request SeedanceAssetCreateRequest,
 	opts ...RequestOption,
-) (*SeedanceAssetResponse, error) {
-	var out SeedanceAssetResponse
+) (*SeedanceAssetCreateResponse, error) {
+	var out SeedanceAssetCreateResponse
 	if err := r.client.doJSON(ctx, http.MethodPost, "/api/v3/assets", nil, request, &out, opts...); err != nil {
 		return nil, err
 	}
@@ -64,8 +64,8 @@ func (r *SeedanceCompatibilityResource) GetAsset(
 	ctx context.Context,
 	request SeedanceAssetGetRequest,
 	opts ...RequestOption,
-) (*SeedanceAssetResponse, error) {
-	var out SeedanceAssetResponse
+) (*SeedanceAssetGetResponse, error) {
+	var out SeedanceAssetGetResponse
 	if err := r.client.doJSON(ctx, http.MethodPost, "/api/v3/assets/get", nil, request, &out, opts...); err != nil {
 		return nil, err
 	}

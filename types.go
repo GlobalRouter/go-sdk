@@ -88,6 +88,7 @@ type ModelProviderSummary struct {
 type Model struct {
 	ID                  string                 `json:"id"`
 	Object              string                 `json:"object"`
+	OwnedBy             string                 `json:"owned_by"`
 	Providers           []ModelProviderSummary `json:"providers,omitempty"`
 	DisplayName         string                 `json:"display_name"`
 	Category            string                 `json:"category"`
@@ -383,6 +384,20 @@ type SeedanceVideoGenerationData struct {
 	Error     *SeedanceVideoError     `json:"error,omitempty"`
 }
 
+// SeedanceVideoGenerationCreateResponse is the flat response returned when a
+// compatibility video generation is created.
+type SeedanceVideoGenerationCreateResponse struct {
+	ID        string        `json:"id"`
+	TaskID    string        `json:"task_id"`
+	Object    string        `json:"object"`
+	Model     SeedanceModel `json:"model"`
+	Status    string        `json:"status"`
+	Progress  float64       `json:"progress"`
+	CreatedAt string        `json:"created_at"`
+}
+
+// SeedanceVideoGenerationResponse is the envelope returned when querying a
+// compatibility video generation.
 type SeedanceVideoGenerationResponse struct {
 	Code    string                      `json:"code"`
 	Message string                      `json:"message"`
@@ -416,25 +431,29 @@ type SeedanceAssetGetRequest struct {
 	ID    string        `json:"Id"`
 }
 
-type SeedanceAssetGroupData struct {
+// SeedanceAssetGroupCreateResponse is the flat response returned when an
+// asset group is created.
+type SeedanceAssetGroupCreateResponse struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// SeedanceAssetCreateResponse is the flat response returned when an asset is
+// created.
+type SeedanceAssetCreateResponse struct {
 	ID string `json:"id"`
 }
 
-type SeedanceAssetData struct {
-	ID  string `json:"id"`
-	URL string `json:"url,omitempty"`
-}
-
-type SeedanceAssetGroupResponse struct {
-	Code    string                 `json:"code"`
-	Message string                 `json:"message"`
-	Data    SeedanceAssetGroupData `json:"data"`
-}
-
-type SeedanceAssetResponse struct {
-	Code    string            `json:"code"`
-	Message string            `json:"message"`
-	Data    SeedanceAssetData `json:"data"`
+// SeedanceAssetGetResponse is the flat response returned when an asset is
+// queried.
+type SeedanceAssetGetResponse struct {
+	ID        string            `json:"id"`
+	URL       string            `json:"url,omitempty"`
+	Name      string            `json:"name,omitempty"`
+	AssetType SeedanceAssetType `json:"asset_type"`
+	GroupID   string            `json:"group_id,omitempty"`
+	Status    string            `json:"status"`
 }
 
 type TaskType string
