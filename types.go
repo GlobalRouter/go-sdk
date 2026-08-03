@@ -250,19 +250,37 @@ type AudioTranscriptionRequest struct {
 	Temperature    *float64 `json:"temperature,omitempty"`
 }
 
-// SeedAudioReference describes an optional audio or image reference accepted by SeedAudio.
-// Audio and Image intentionally use any so callers can adopt new official reference shapes.
+// SeedAudioReference describes one audio or image reference accepted by SeedAudio.
+// Speaker, AudioData, and AudioURL are mutually exclusive. ImageData and ImageURL
+// are mutually exclusive, and image references cannot be mixed with audio references.
 type SeedAudioReference struct {
-	Audio any    `json:"audio,omitempty"`
-	Image any    `json:"image,omitempty"`
-	Type  string `json:"type,omitempty"`
+	Speaker   string `json:"speaker,omitempty"`
+	AudioData string `json:"audio_data,omitempty"`
+	AudioURL  string `json:"audio_url,omitempty"`
+	ImageData string `json:"image_data,omitempty"`
+	ImageURL  string `json:"image_url,omitempty"`
 }
 
 type SeedAudioConfig struct {
-	Format     string `json:"format,omitempty"`
-	SampleRate *int   `json:"sample_rate,omitempty"`
-	Bitrate    *int   `json:"bitrate,omitempty"`
-	Channel    *int   `json:"channel,omitempty"`
+	Format         string `json:"format,omitempty"`
+	SampleRate     *int   `json:"sample_rate,omitempty"`
+	SpeechRate     *int   `json:"speech_rate,omitempty"`
+	LoudnessRate   *int   `json:"loudness_rate,omitempty"`
+	PitchRate      *int   `json:"pitch_rate,omitempty"`
+	EnableSubtitle *bool  `json:"enable_subtitle,omitempty"`
+}
+
+type SeedAudioAIGCMetadata struct {
+	Enable            *bool  `json:"enable,omitempty"`
+	ContentProducer   string `json:"content_producer,omitempty"`
+	ProduceID         string `json:"produce_id,omitempty"`
+	ContentPropagator string `json:"content_propagator,omitempty"`
+	PropagateID       string `json:"propagate_id,omitempty"`
+}
+
+type SeedAudioWatermark struct {
+	AIGCWatermark *bool                  `json:"aigc_watermark,omitempty"`
+	AIGCMetadata  *SeedAudioAIGCMetadata `json:"aigc_metadata,omitempty"`
 }
 
 type SeedAudioRequest struct {
@@ -270,23 +288,35 @@ type SeedAudioRequest struct {
 	TextPrompt  string               `json:"text_prompt"`
 	References  []SeedAudioReference `json:"references,omitempty"`
 	AudioConfig *SeedAudioConfig     `json:"audio_config,omitempty"`
-	Watermark   *bool                `json:"watermark,omitempty"`
+	Watermark   *SeedAudioWatermark  `json:"watermark,omitempty"`
+}
+
+type SeedAudioSubtitleWord struct {
+	StartTime int    `json:"start_time"`
+	EndTime   int    `json:"end_time"`
+	Text      string `json:"text"`
+}
+
+type SeedAudioSubtitleSentence struct {
+	StartTime int                     `json:"start_time"`
+	EndTime   int                     `json:"end_time"`
+	Text      string                  `json:"text"`
+	Words     []SeedAudioSubtitleWord `json:"words,omitempty"`
 }
 
 type SeedAudioSubtitle struct {
-	Text      string  `json:"text"`
-	StartTime float64 `json:"start_time"`
-	EndTime   float64 `json:"end_time"`
+	Text      string                      `json:"text"`
+	Sentences []SeedAudioSubtitleSentence `json:"sentences,omitempty"`
 }
 
 type SeedAudioResponse struct {
-	Code             int                 `json:"code,omitempty"`
-	Message          string              `json:"message,omitempty"`
-	Audio            string              `json:"audio,omitempty"`
-	Duration         float64             `json:"duration,omitempty"`
-	OriginalDuration float64             `json:"original_duration,omitempty"`
-	URL              string              `json:"url,omitempty"`
-	Subtitle         []SeedAudioSubtitle `json:"subtitle,omitempty"`
+	Code             int                `json:"code,omitempty"`
+	Message          string             `json:"message,omitempty"`
+	Audio            string             `json:"audio,omitempty"`
+	Duration         float64            `json:"duration,omitempty"`
+	OriginalDuration float64            `json:"original_duration,omitempty"`
+	URL              string             `json:"url,omitempty"`
+	Subtitle         *SeedAudioSubtitle `json:"subtitle,omitempty"`
 }
 
 type GenerationRequest struct {

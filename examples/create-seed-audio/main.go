@@ -18,11 +18,14 @@ func main() {
 		context.Background(),
 		globalrouter.SeedAudioRequest{
 			Model:      "doubao-seed-audio-1-0",
-			TextPrompt: "Warm acoustic guitar and soft piano, calm, instrumental",
+			TextPrompt: "Use @音频1 as a style reference for a calm piano passage",
+			References: []globalrouter.SeedAudioReference{{
+				AudioURL: "https://example.com/reference.mp3",
+			}},
 			AudioConfig: &globalrouter.SeedAudioConfig{
-				Format: "mp3",
+				Format:         "mp3",
+				EnableSubtitle: globalrouter.Bool(true),
 			},
-			Watermark: globalrouter.Bool(false),
 		},
 	)
 	if err != nil {

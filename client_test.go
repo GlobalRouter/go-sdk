@@ -294,8 +294,12 @@ func TestAudioCreateSeedAudioSendsGRAuthAndDecodesResponse(t *testing.T) {
 			t.Fatalf("request body = %#v", body)
 		}
 		config, ok := body["audio_config"].(map[string]any)
-		if !ok || config["format"] != "mp3" {
+		if !ok || config["format"] != "mp3" || config["speech_rate"] != float64(10) || config["enable_subtitle"] != true {
 			t.Fatalf("audio_config = %#v", body["audio_config"])
+		}
+		references, ok := body["references"].([]any)
+		if !ok || len(references) != 1 || references[0].(map[string]any)["audio_url"] != "https://cdn.example/reference.mp3" {
+			t.Fatalf("references = %#v", body["references"])
 		}
 		writeJSON(t, w, map[string]any{
 			"code":              0,
@@ -304,9 +308,15 @@ func TestAudioCreateSeedAudioSendsGRAuthAndDecodesResponse(t *testing.T) {
 			"duration":          1.2,
 			"original_duration": 1.5,
 			"url":               "https://cdn.example/audio.mp3",
-			"subtitle": []map[string]any{{
-				"text": "piano", "start_time": 0, "end_time": 1500,
-			}},
+			"subtitle": map[string]any{
+				"text": "piano",
+				"sentences": []map[string]any{{
+					"text": "piano", "start_time": 0, "end_time": 1500,
+					"words": []map[string]any{{
+						"text": "piano", "start_time": 0, "end_time": 1500,
+					}},
+				}},
+			},
 		})
 	}))
 	defer server.Close()
@@ -319,8 +329,13 @@ func TestAudioCreateSeedAudioSendsGRAuthAndDecodesResponse(t *testing.T) {
 	response, err := client.Audio.CreateSeedAudio(context.Background(), SeedAudioRequest{
 		Model:      "doubao-seed-audio-1-0",
 		TextPrompt: "A quiet piano solo",
+		References: []SeedAudioReference{{
+			AudioURL: "https://cdn.example/reference.mp3",
+		}},
 		AudioConfig: &SeedAudioConfig{
-			Format: "mp3",
+			Format:         "mp3",
+			SpeechRate:     Int(10),
+			EnableSubtitle: Bool(true),
 		},
 	})
 	if err != nil {
@@ -329,8 +344,39 @@ func TestAudioCreateSeedAudioSendsGRAuthAndDecodesResponse(t *testing.T) {
 	if response.Audio != "base64-audio" || response.OriginalDuration != 1.5 {
 		t.Fatalf("response = %#v", response)
 	}
-	if len(response.Subtitle) != 1 || response.Subtitle[0].Text != "piano" {
+	if response.Subtitle == nil || len(response.Subtitle.Sentences) != 1 || response.Subtitle.Sentences[0].Words[0].Text != "piano" {
 		t.Fatalf("subtitle = %#v", response.Subtitle)
+	}
+}
+
+func TestSeedAudioRequestUsesOfficialImageReferenceAndWatermarkFields(t *testing.T) {
+	body, err := json.Marshal(SeedAudioRequest{
+		Model:      "doubao-seed-audio-1-0",
+		TextPrompt: "Read this text",
+		References: []SeedAudioReference{{ImageData: "base64-image"}},
+		Watermark: &SeedAudioWatermark{
+			AIGCWatermark: Bool(true),
+			AIGCMetadata: &SeedAudioAIGCMetadata{
+				Enable:          Bool(true),
+				ContentProducer: "GlobalRouter",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	reference := decoded["references"].([]any)[0].(map[string]any)
+	if reference["image_data"] != "base64-image" || len(reference) != 1 {
+		t.Fatalf("reference = %#v", reference)
+	}
+	watermark := decoded["watermark"].(map[string]any)
+	if watermark["aigc_watermark"] != true || watermark["aigc_metadata"].(map[string]any)["content_producer"] != "GlobalRouter" {
+		t.Fatalf("watermark = %#v", watermark)
 	}
 }
 
