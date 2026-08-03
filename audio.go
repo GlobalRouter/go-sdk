@@ -22,6 +22,15 @@ func (r *AudioResource) CreateTranscription(ctx context.Context, request AudioTr
 	return out, nil
 }
 
+// CreateSeedAudio generates music through the Doubao SeedAudio-compatible endpoint.
+func (r *AudioResource) CreateSeedAudio(ctx context.Context, request SeedAudioRequest, opts ...RequestOption) (*SeedAudioResponse, error) {
+	var out SeedAudioResponse
+	if err := r.client.doJSON(ctx, http.MethodPost, "/doubao/api/v3/tts/create", nil, request, &out, opts...); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func audioSpeechAccept(format string) string {
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "", "mp3":

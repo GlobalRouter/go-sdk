@@ -272,6 +272,68 @@ func TestAudioCreateSpeechParsesAPIErrorEnvelope(t *testing.T) {
 	}
 }
 
+func TestAudioCreateSeedAudioSendsGRAuthAndDecodesResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/doubao/api/v3/tts/create" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer gr_test" {
+			t.Fatalf("authorization header = %q", got)
+		}
+		if got := r.Header.Get("X-Api-Key"); got != "" {
+			t.Fatalf("X-Api-Key must not be sent, got %q", got)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body["model"] != "doubao-seed-audio-1-0" || body["text_prompt"] != "A quiet piano solo" {
+			t.Fatalf("request body = %#v", body)
+		}
+		config, ok := body["audio_config"].(map[string]any)
+		if !ok || config["format"] != "mp3" {
+			t.Fatalf("audio_config = %#v", body["audio_config"])
+		}
+		writeJSON(t, w, map[string]any{
+			"code":              0,
+			"message":           "success",
+			"audio":             "base64-audio",
+			"duration":          1.2,
+			"original_duration": 1.5,
+			"url":               "https://cdn.example/audio.mp3",
+			"subtitle": []map[string]any{{
+				"text": "piano", "start_time": 0, "end_time": 1500,
+			}},
+		})
+	}))
+	defer server.Close()
+
+	client := New(
+		WithAPIKey("gr_test"),
+		WithBaseURL(server.URL),
+		WithRetryConfig(RetryConfig{MaxRetries: 0}),
+	)
+	response, err := client.Audio.CreateSeedAudio(context.Background(), SeedAudioRequest{
+		Model:      "doubao-seed-audio-1-0",
+		TextPrompt: "A quiet piano solo",
+		AudioConfig: &SeedAudioConfig{
+			Format: "mp3",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Audio != "base64-audio" || response.OriginalDuration != 1.5 {
+		t.Fatalf("response = %#v", response)
+	}
+	if len(response.Subtitle) != 1 || response.Subtitle[0].Text != "piano" {
+		t.Fatalf("subtitle = %#v", response.Subtitle)
+	}
+}
+
 func TestRetryRetriesServerErrorsOnly(t *testing.T) {
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

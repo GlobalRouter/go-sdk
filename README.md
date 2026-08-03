@@ -93,8 +93,31 @@ for {
 - `client.Images.GetTask`
 - `client.Audio.CreateSpeech`
 - `client.Audio.CreateTranscription`
+- `client.Audio.CreateSeedAudio`
 - `client.Videos.Generate`
 - `client.ThreeD.Generate`
+
+## Doubao SeedAudio
+
+```go
+response, err := client.Audio.CreateSeedAudio(ctx, globalrouter.SeedAudioRequest{
+	Model:      "doubao-seed-audio-1-0",
+	TextPrompt: "Warm acoustic guitar and soft piano, calm, instrumental",
+	AudioConfig: &globalrouter.SeedAudioConfig{
+		Format: "mp3",
+	},
+	Watermark: globalrouter.Bool(false),
+})
+if err != nil {
+	log.Fatal(err)
+}
+log.Println(response.URL, response.OriginalDuration)
+```
+
+This method sends `POST /doubao/api/v3/tts/create` with the configured
+GlobalRouter Bearer key. Do not provide a Volcengine `X-Api-Key`; GlobalRouter
+selects the upstream credential. See `examples/create-seed-audio` for a
+complete program.
 
 ## Configuration
 

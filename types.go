@@ -250,6 +250,45 @@ type AudioTranscriptionRequest struct {
 	Temperature    *float64 `json:"temperature,omitempty"`
 }
 
+// SeedAudioReference describes an optional audio or image reference accepted by SeedAudio.
+// Audio and Image intentionally use any so callers can adopt new official reference shapes.
+type SeedAudioReference struct {
+	Audio any    `json:"audio,omitempty"`
+	Image any    `json:"image,omitempty"`
+	Type  string `json:"type,omitempty"`
+}
+
+type SeedAudioConfig struct {
+	Format     string `json:"format,omitempty"`
+	SampleRate *int   `json:"sample_rate,omitempty"`
+	Bitrate    *int   `json:"bitrate,omitempty"`
+	Channel    *int   `json:"channel,omitempty"`
+}
+
+type SeedAudioRequest struct {
+	Model       string               `json:"model"`
+	TextPrompt  string               `json:"text_prompt"`
+	References  []SeedAudioReference `json:"references,omitempty"`
+	AudioConfig *SeedAudioConfig     `json:"audio_config,omitempty"`
+	Watermark   *bool                `json:"watermark,omitempty"`
+}
+
+type SeedAudioSubtitle struct {
+	Text      string  `json:"text"`
+	StartTime float64 `json:"start_time"`
+	EndTime   float64 `json:"end_time"`
+}
+
+type SeedAudioResponse struct {
+	Code             int                 `json:"code,omitempty"`
+	Message          string              `json:"message,omitempty"`
+	Audio            string              `json:"audio,omitempty"`
+	Duration         float64             `json:"duration,omitempty"`
+	OriginalDuration float64             `json:"original_duration,omitempty"`
+	URL              string              `json:"url,omitempty"`
+	Subtitle         []SeedAudioSubtitle `json:"subtitle,omitempty"`
+}
+
 type GenerationRequest struct {
 	Model           string                  `json:"model"`
 	Prompt          string                  `json:"prompt"`
