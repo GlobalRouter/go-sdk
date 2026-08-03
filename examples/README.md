@@ -26,4 +26,8 @@ go run ./examples/create-seed-audio
 - `create-video/` -> `POST /api/v1/videos`, via `client.Videos.Generate(...)`.
 - `create-seed-audio/` -> `POST /doubao/api/v3/tts/create`, via `client.Audio.CreateSeedAudio(...)`.
 
+SeedAudio provider selection is server-side: the SDK sends only the
+GlobalRouter Bearer key and official request fields, while GlobalRouter routes
+the request through its dedicated `doubao_audio` provider.
+
 The examples intentionally include only the public `/api/v1` request shapes shown in the GlobalRouter docs.

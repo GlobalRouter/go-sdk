@@ -119,8 +119,10 @@ log.Println(response.URL, response.OriginalDuration)
 
 This method sends `POST /doubao/api/v3/tts/create` with the configured
 GlobalRouter Bearer key. Do not provide a Volcengine `X-Api-Key`; GlobalRouter
-selects the upstream credential. See `examples/create-seed-audio` for a
-complete program.
+selects the dedicated `doubao_audio` provider and its upstream credential on
+the server. The SDK does not send a `provider` field. See
+`examples/create-seed-audio` for a complete program; set
+`GLOBALROUTER_BASE_URL` to target a non-production GlobalRouter environment.
 
 ## Configuration
 

@@ -11,22 +11,16 @@ import (
 )
 
 func main() {
-	client := globalrouter.New(
+	opts := []globalrouter.SDKOption{
 		globalrouter.WithAPIKey(os.Getenv("GLOBALROUTER_API_KEY")),
-	)
+	}
+	if baseURL := os.Getenv("GLOBALROUTER_BASE_URL"); baseURL != "" {
+		opts = append(opts, globalrouter.WithBaseURL(baseURL))
+	}
+	client := globalrouter.New(opts...)
 	response, err := client.Audio.CreateSeedAudio(
 		context.Background(),
-		globalrouter.SeedAudioRequest{
-			Model:      "doubao-seed-audio-1-0",
-			TextPrompt: "Use @音频1 as a style reference for a calm piano passage",
-			References: []globalrouter.SeedAudioReference{{
-				AudioURL: "https://example.com/reference.mp3",
-			}},
-			AudioConfig: &globalrouter.SeedAudioConfig{
-				Format:         "mp3",
-				EnableSubtitle: globalrouter.Bool(true),
-			},
-		},
+		realRequestBody(),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -37,4 +31,15 @@ func main() {
 		log.Fatal(err)
 	}
 	fmt.Println(string(data))
+}
+
+func realRequestBody() globalrouter.SeedAudioRequest {
+	return globalrouter.SeedAudioRequest{
+		Model:      "doubao-seed-audio-1-0",
+		TextPrompt: "Generate a calm piano passage with a soft, relaxing atmosphere.",
+		AudioConfig: &globalrouter.SeedAudioConfig{
+			Format:         "mp3",
+			EnableSubtitle: globalrouter.Bool(true),
+		},
+	}
 }
