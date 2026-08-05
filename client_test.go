@@ -667,6 +667,62 @@ func TestVideosGenerateSendsDocsRequestShape(t *testing.T) {
 	}
 }
 
+func TestImagesGenerateOmitsEmptyProviderSelection(t *testing.T) {
+	var requests []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/images" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		requests = append(requests, body)
+		writeJSON(t, w, map[string]any{"data": []map[string]any{{"b64_json": "AAAA"}}})
+	}))
+	defer server.Close()
+
+	client := New(WithBaseURL(server.URL), WithRetryConfig(RetryConfig{MaxRetries: 0}))
+	_, err := client.Images.Generate(context.Background(), ImageGenerationRequest{
+		Model:    "seedream-image",
+		Prompt:   "image",
+		Provider: &ProviderSelection{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Images.Generate(context.Background(), ImageGenerationRequest{
+		Model:  "seedream-image",
+		Prompt: "image",
+		Provider: &ProviderSelection{
+			ProviderID: "doubao",
+			Options: map[string]map[string]any{
+				"doubao": {"watermark": false},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := requests[0]["provider"]; ok {
+		t.Fatalf("empty provider must not be sent: %#v", requests[0])
+	}
+	provider, ok := requests[1]["provider"].(map[string]any)
+	if !ok {
+		t.Fatalf("provider = %#v", requests[1]["provider"])
+	}
+	if provider["provider_id"] != "doubao" {
+		t.Fatalf("provider_id = %#v", provider["provider_id"])
+	}
+	if _, ok := provider["options"].(map[string]any); !ok {
+		t.Fatalf("options = %#v", provider["options"])
+	}
+}
+
 func TestTaskAndMultimodalResourcePaths(t *testing.T) {
 	seen := map[string]bool{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
