@@ -164,14 +164,29 @@ type GenerationRequest struct {
 	IdempotencyKey string                  `json:"idempotency_key,omitempty"`
 }
 
+type VideoSuperResolutionRequest struct {
+	VideoURL   string `json:"video_url"`
+	Resolution string `json:"resolution"`
+}
+
+type VideoJobResponse struct {
+	ID           string         `json:"id"`
+	PollingURL   string         `json:"polling_url"`
+	Status       string         `json:"status"`
+	UnsignedURLs []string       `json:"unsigned_urls,omitempty"`
+	Usage        map[string]any `json:"usage,omitempty"`
+	Error        string         `json:"error,omitempty"`
+}
+
 type TaskType string
 
 const (
-	TaskTypeImageGeneration  TaskType = "image_generation"
-	TaskTypeImageEdit        TaskType = "image_edit"
-	TaskTypeVideoGeneration  TaskType = "video_generation"
-	TaskTypeAudioGeneration  TaskType = "audio_generation"
-	TaskTypeThreeDGeneration TaskType = "3d_generation"
+	TaskTypeImageGeneration       TaskType = "image_generation"
+	TaskTypeImageEdit             TaskType = "image_edit"
+	TaskTypeVideoGeneration       TaskType = "video_generation"
+	TaskTypeVideoSuperResolution TaskType = "video_super_resolution"
+	TaskTypeAudioGeneration       TaskType = "audio_generation"
+	TaskTypeThreeDGeneration      TaskType = "3d_generation"
 )
 
 type TaskStatus string

@@ -329,6 +329,10 @@ func TestTaskAndMultimodalResourcePaths(t *testing.T) {
 			writeJSON(t, w, TaskBatchResponse{BatchID: "batch_1", Items: []TaskResponse{}, Total: 0, Page: 1, PageSize: 0})
 			return
 		}
+		if r.URL.Path == "/api/v1/videos/super-resolution" {
+			writeJSON(t, w, VideoJobResponse{ID: "task_sr", PollingURL: "/api/v1/videos/task_sr", Status: "in_progress"})
+			return
+		}
 		if strings.Contains(r.URL.Path, "/tasks/") || r.URL.Path == "/v1/tasks" || r.URL.Path == "/v1/videos/generations" || r.URL.Path == "/v1/3d/generations" {
 			writeJSON(t, w, TaskResponse{ID: "task_1", Object: "task", Status: TaskStatusQueued, Progress: 0.25, Type: TaskTypeVideoGeneration, Model: "m"})
 			return
@@ -350,6 +354,7 @@ func TestTaskAndMultimodalResourcePaths(t *testing.T) {
 	_, _ = client.Audio.CreateSpeech(ctx, AudioSpeechRequest{Model: "m", Input: "hello", Voice: "alloy"})
 	_, _ = client.Audio.CreateTranscription(ctx, AudioTranscriptionRequest{Model: "m", FileURL: "https://example.com/a.wav"})
 	_, _ = client.Videos.Generate(ctx, GenerationRequest{Model: "m", Prompt: "video"}, WithIdempotencyKey("idem_1"))
+	_, _ = client.Videos.SuperResolution(ctx, VideoSuperResolutionRequest{VideoURL: "https://example.com/source.mp4", Resolution: "1080p"})
 	_, _ = client.ThreeD.Generate(ctx, GenerationRequest{Model: "m", Prompt: "mesh"})
 	_, _ = client.Embeddings.Create(ctx, EmbeddingsRequest{Model: "m", Input: "hello"})
 
@@ -365,6 +370,7 @@ func TestTaskAndMultimodalResourcePaths(t *testing.T) {
 		"POST /v1/audio/speech",
 		"POST /v1/audio/transcriptions",
 		"POST /v1/videos/generations",
+		"POST /api/v1/videos/super-resolution",
 		"POST /v1/3d/generations",
 		"POST /v1/embeddings",
 	} {
