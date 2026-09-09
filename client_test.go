@@ -108,6 +108,42 @@ func TestChatCreateDecodesBodyAfterHeadersFlush(t *testing.T) {
 	}
 }
 
+func TestChatGenerationControlsJSON(t *testing.T) {
+	request := ChatRequest{
+		Model:               "qwen3.8-max",
+		MaxCompletionTokens: Int(1024),
+		Reasoning: &ReasoningConfig{
+			Enabled:   Bool(true),
+			MaxTokens: Int(256),
+			Exclude:   Bool(true),
+		},
+	}
+	payload, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var encoded map[string]any
+	if err := json.Unmarshal(payload, &encoded); err != nil {
+		t.Fatal(err)
+	}
+	if encoded["max_completion_tokens"] != float64(1024) {
+		t.Fatalf("max_completion_tokens = %#v", encoded["max_completion_tokens"])
+	}
+	reasoning, ok := encoded["reasoning"].(map[string]any)
+	if !ok || reasoning["max_tokens"] != float64(256) || reasoning["exclude"] != true {
+		t.Fatalf("reasoning = %#v", encoded["reasoning"])
+	}
+
+	var response ChatResponse
+	if err := json.Unmarshal([]byte(`{"id":"chat_1","model":"qwen3.8-max","choices":[{"index":0,"message":{"role":"assistant","content":"42","reasoning":"work","reasoning_details":[{"type":"text"}]}}]}`), &response); err != nil {
+		t.Fatal(err)
+	}
+	message := response.Choices[0].Message
+	if message == nil || message.Reasoning != "work" || len(message.ReasoningDetails) != 1 {
+		t.Fatalf("message = %#v", message)
+	}
+}
+
 func TestModelsListBuildsFilters(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {
