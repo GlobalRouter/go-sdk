@@ -33,7 +33,12 @@ func main() {
 	)
 
 	res, err := client.Chat.Create(ctx, globalrouter.ChatRequest{
-		Model: "openai/gpt-4o-mini",
+		Model:               "qwen3.8-max",
+		MaxCompletionTokens: globalrouter.Int(1024),
+		Reasoning: &globalrouter.ReasoningConfig{
+			Effort:  "high",
+			Exclude: globalrouter.Bool(true),
+		},
 		Messages: []globalrouter.Message{{
 			Role:    globalrouter.RoleUser,
 			Content: "Say hello in one sentence.",
