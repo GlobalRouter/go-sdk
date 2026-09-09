@@ -18,34 +18,49 @@ type ContentPart struct {
 }
 
 type Message struct {
-	Role       Role             `json:"role"`
-	Content    any              `json:"content,omitempty"`
-	Name       string           `json:"name,omitempty"`
-	ToolCalls  []map[string]any `json:"tool_calls,omitempty"`
-	ToolCallID string           `json:"tool_call_id,omitempty"`
+	Role             Role             `json:"role"`
+	Content          any              `json:"content,omitempty"`
+	Name             string           `json:"name,omitempty"`
+	ToolCalls        []map[string]any `json:"tool_calls,omitempty"`
+	ToolCallID       string           `json:"tool_call_id,omitempty"`
+	Reasoning        string           `json:"reasoning,omitempty"`
+	ReasoningDetails []map[string]any `json:"reasoning_details,omitempty"`
+}
+
+type ReasoningConfig struct {
+	Enabled   *bool  `json:"enabled,omitempty"`
+	Effort    string `json:"effort,omitempty"`
+	MaxTokens *int   `json:"max_tokens,omitempty"`
+	Exclude   *bool  `json:"exclude,omitempty"`
 }
 
 type ChatRequest struct {
-	Model          string           `json:"model"`
-	Provider       string           `json:"provider,omitempty"`
-	Messages       []Message        `json:"messages,omitempty"`
-	Temperature    *float64         `json:"temperature,omitempty"`
-	TopP           *float64         `json:"top_p,omitempty"`
-	MaxTokens      *int             `json:"max_tokens,omitempty"`
-	Stream         bool             `json:"stream,omitempty"`
-	StreamOptions  map[string]any   `json:"stream_options,omitempty"`
-	Tools          []map[string]any `json:"tools,omitempty"`
-	ToolChoice     any              `json:"tool_choice,omitempty"`
-	ResponseFormat map[string]any   `json:"response_format,omitempty"`
-	Stop           any              `json:"stop,omitempty"`
-	User           string           `json:"user,omitempty"`
-	Router         map[string]any   `json:"_router,omitempty"`
+	Model               string           `json:"model"`
+	Provider            string           `json:"provider,omitempty"`
+	Messages            []Message        `json:"messages,omitempty"`
+	Temperature         *float64         `json:"temperature,omitempty"`
+	TopP                *float64         `json:"top_p,omitempty"`
+	MaxTokens           *int             `json:"max_tokens,omitempty"`
+	MaxCompletionTokens *int             `json:"max_completion_tokens,omitempty"`
+	Reasoning           *ReasoningConfig `json:"reasoning,omitempty"`
+	ReasoningEffort     string           `json:"reasoning_effort,omitempty"`
+	IncludeReasoning    *bool            `json:"include_reasoning,omitempty"`
+	Stream              bool             `json:"stream,omitempty"`
+	StreamOptions       map[string]any   `json:"stream_options,omitempty"`
+	Tools               []map[string]any `json:"tools,omitempty"`
+	ToolChoice          any              `json:"tool_choice,omitempty"`
+	ResponseFormat      map[string]any   `json:"response_format,omitempty"`
+	Stop                any              `json:"stop,omitempty"`
+	User                string           `json:"user,omitempty"`
+	Router              map[string]any   `json:"_router,omitempty"`
 }
 
 type ChoiceDelta struct {
-	Role      Role             `json:"role,omitempty"`
-	Content   string           `json:"content,omitempty"`
-	ToolCalls []map[string]any `json:"tool_calls,omitempty"`
+	Role             Role             `json:"role,omitempty"`
+	Content          string           `json:"content,omitempty"`
+	ToolCalls        []map[string]any `json:"tool_calls,omitempty"`
+	Reasoning        string           `json:"reasoning,omitempty"`
+	ReasoningDetails []map[string]any `json:"reasoning_details,omitempty"`
 }
 
 type ChatChoice struct {
@@ -181,12 +196,12 @@ type VideoJobResponse struct {
 type TaskType string
 
 const (
-	TaskTypeImageGeneration       TaskType = "image_generation"
-	TaskTypeImageEdit             TaskType = "image_edit"
-	TaskTypeVideoGeneration       TaskType = "video_generation"
+	TaskTypeImageGeneration      TaskType = "image_generation"
+	TaskTypeImageEdit            TaskType = "image_edit"
+	TaskTypeVideoGeneration      TaskType = "video_generation"
 	TaskTypeVideoSuperResolution TaskType = "video_super_resolution"
-	TaskTypeAudioGeneration       TaskType = "audio_generation"
-	TaskTypeThreeDGeneration      TaskType = "3d_generation"
+	TaskTypeAudioGeneration      TaskType = "audio_generation"
+	TaskTypeThreeDGeneration     TaskType = "3d_generation"
 )
 
 type TaskStatus string
