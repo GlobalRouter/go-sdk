@@ -147,6 +147,7 @@ type ImageGenerationRequest struct {
 	ResponseFormat string                  `json:"response_format,omitempty"`
 	Quality        string                  `json:"quality,omitempty"`
 	Style          string                  `json:"style,omitempty"`
+	Watermark      *bool                   `json:"watermark,omitempty"`
 	SR             *SuperResolutionRequest `json:"sr,omitempty"`
 	User           string                  `json:"user,omitempty"`
 }
