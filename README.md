@@ -111,6 +111,11 @@ client := globalrouter.New(
 
 The SDK reads `GLOBALROUTER_API_KEY` by default when `WithAPIKey` is omitted.
 
+图片生成的 `ImageGenerationRequest.Watermark` 使用 `*bool`，显式传入 `false`
+会发送 JSON `false`。对象形式的 `provider`（例如 `provider_id`）使用
+`client.Images.GenerateOpenRouter(ctx, map[string]any{...})` 调用 `/api/v1/images`。
+两种图片提交均只发送一次；超时或结果未知时应核对原请求。
+
 Per-request options:
 
 - `WithIdempotencyKey`
