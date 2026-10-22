@@ -51,6 +51,23 @@ func main() {
 }
 ```
 
+## Chat 内容透传
+
+`ContentPart` 支持 `Video`、`VideoURL`、`InputAudio`、`File`。
+通用 Chat 链路按传入的类型和字段透传，上游模型支持情况由上游判断；
+原生协议适配器无法转换的类型会明确报错。
+
+```go
+content := []globalrouter.ContentPart{
+    {Type: "video_url", VideoURL: map[string]any{"url": "https://example.com/video.mp4"}},
+    {Type: "input_audio", InputAudio: map[string]any{"data": "<base64>", "format": "wav"}},
+    {Type: "file", File: map[string]any{"file_id": "<上游文件 ID>"}},
+}
+```
+
+将 `content` 赋给 `Message.Content`。任意上游扩展字段可以通过
+`Message.Content: []map[string]any{...}` 表达。文件 ID 不会自动跨 provider 搬运。
+
 ## Streaming
 
 ```go
