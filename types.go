@@ -25,6 +25,7 @@ type Message struct {
 	ToolCallID       string           `json:"tool_call_id,omitempty"`
 	Reasoning        string           `json:"reasoning,omitempty"`
 	ReasoningDetails []map[string]any `json:"reasoning_details,omitempty"`
+	EncryptedContent string           `json:"encrypted_content,omitempty"`
 }
 
 type ReasoningConfig struct {
@@ -61,6 +62,7 @@ type ChoiceDelta struct {
 	ToolCalls        []map[string]any `json:"tool_calls,omitempty"`
 	Reasoning        string           `json:"reasoning,omitempty"`
 	ReasoningDetails []map[string]any `json:"reasoning_details,omitempty"`
+	EncryptedContent string           `json:"encrypted_content,omitempty"`
 }
 
 type ChatChoice struct {
