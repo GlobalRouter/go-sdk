@@ -10,11 +10,14 @@ const (
 )
 
 type ContentPart struct {
-	Type     string         `json:"type"`
-	Text     string         `json:"text,omitempty"`
-	ImageURL any            `json:"image_url,omitempty"`
-	Audio    map[string]any `json:"audio,omitempty"`
-	Video    map[string]any `json:"video,omitempty"`
+	Type       string         `json:"type"`
+	Text       string         `json:"text,omitempty"`
+	ImageURL   any            `json:"image_url,omitempty"`
+	Audio      map[string]any `json:"audio,omitempty"`
+	Video      map[string]any `json:"video,omitempty"`
+	VideoURL   any            `json:"video_url,omitempty"`
+	InputAudio map[string]any `json:"input_audio,omitempty"`
+	File       map[string]any `json:"file,omitempty"`
 }
 
 type Message struct {
