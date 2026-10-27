@@ -23,6 +23,9 @@ func main() {
 	task, err := client.Videos.Generate(ctx, globalrouter.GenerationRequest{
 		Model:  model,
 		Prompt: "A slow camera move across a clean product workspace.",
+		SR: &globalrouter.SuperResolutionRequest{
+			Resolution: "1080p",
+		},
 		Input: map[string]any{
 			"duration_seconds": 10,
 			"resolution":       "1080p",
@@ -39,5 +42,5 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("task %s is %s\n", current.ID, current.Status)
+	fmt.Printf("task %s is %s; final URL follows the task output and SR failures fall back to the original video\n", current.ID, current.Status)
 }

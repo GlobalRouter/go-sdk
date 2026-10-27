@@ -770,6 +770,16 @@ func TestVideosGenerateUsesKlingEntryAndDoesNotRetry(t *testing.T) {
 		if references[0].(map[string]any)["id"] != "video_1" {
 			t.Fatalf("references = %#v", references)
 		}
+		sr, ok := payload["sr"].(map[string]any)
+		if !ok {
+			t.Fatalf("sr = %#v", payload["sr"])
+		}
+		if sr["resolution"] != "1080p" || sr["target_width"] != float64(1920) || sr["target_height"] != float64(1080) {
+			t.Fatalf("sr = %#v", sr)
+		}
+		if _, ok := payload["input"].(map[string]any)["sr"]; ok {
+			t.Fatalf("sr must be top-level: %#v", payload)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadGateway)
 		_, _ = w.Write([]byte(`{"error":{"code":"UPSTREAM_FAILED","message":"failed"}}`))
@@ -785,6 +795,11 @@ func TestVideosGenerateUsesKlingEntryAndDoesNotRetry(t *testing.T) {
 		GenerationRequest{
 			Model:  "platform-kling-4",
 			Prompt: "animate",
+			SR: &SuperResolutionRequest{
+				Resolution:   "1080p",
+				TargetWidth:  Int(1920),
+				TargetHeight: Int(1080),
+			},
 			Input: map[string]any{
 				"references": []any{map[string]any{
 					"type": "video",

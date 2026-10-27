@@ -120,7 +120,9 @@ type EmbeddingsRequest struct {
 }
 
 type SuperResolutionRequest struct {
-	Resolution string `json:"resolution,omitempty"`
+	Resolution   string `json:"resolution,omitempty"`
+	TargetWidth  *int   `json:"target_width,omitempty"`
+	TargetHeight *int   `json:"target_height,omitempty"`
 }
 
 type ProviderSelection struct {
