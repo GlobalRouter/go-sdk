@@ -45,7 +45,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Println("# POST /api/v1/videos")
+	fmt.Println("# POST /api/v1/videos/generations")
 	fmt.Println("\n# Request JSON")
 	printJSONFromBytes(capture.bodies[0])
 	fmt.Println("\n# cURL")
@@ -61,7 +61,6 @@ func requestBody() globalrouter.GenerationRequest {
 		AspectRatio:   "16:9",
 		Duration:      globalrouter.Int(5),
 		Resolution:    "720p",
-		SR:            &globalrouter.SuperResolutionRequest{Resolution: "1080p"},
 		Seed:          globalrouter.Int(12345),
 		GenerateAudio: globalrouter.Bool(true),
 		CallbackURL:   "https://example.com/webhooks/video",
@@ -99,9 +98,12 @@ func (c *captureClient) Do(req *http.Request) (*http.Response, error) {
 	c.bodies = append(c.bodies, bodyBytes)
 
 	response := map[string]any{
-		"id":          "job_123",
-		"polling_url": "/api/v1/videos/job_123",
-		"status":      "pending",
+		"id":       "task_video_123",
+		"object":   "task",
+		"status":   "queued",
+		"type":     "video_generation",
+		"model":    "doubao-seedance-1-0-pro-fast-251015",
+		"progress": 0.01,
 	}
 	data, err := json.Marshal(response)
 	if err != nil {

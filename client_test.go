@@ -629,7 +629,7 @@ func TestVideosGenerateSendsDocsRequestShape(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method = %s, want POST", r.Method)
 		}
-		if r.URL.Path != "/api/v1/videos" {
+		if r.URL.Path != "/api/v1/videos/generations" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		if got := r.Header.Get("Idempotency-Key"); got != "idem_video_1" {
@@ -647,12 +647,12 @@ func TestVideosGenerateSendsDocsRequestShape(t *testing.T) {
 			t.Fatalf("video shape = %#v", body)
 		}
 
-		writeJSON(t, w, VideoGenerationResponse{ID: "job_123", PollingURL: "/api/v1/videos/job_123", Status: "pending"})
+		writeJSON(t, w, TaskResponse{ID: "task_123", Object: "task", Status: TaskStatusQueued, Type: TaskTypeVideoGeneration})
 	}))
 	defer server.Close()
 
 	client := New(WithBaseURL(server.URL), WithRetryConfig(RetryConfig{MaxRetries: 0}))
-	_, err := client.Videos.Generate(context.Background(), GenerationRequest{
+	response, err := client.Videos.Generate(context.Background(), GenerationRequest{
 		Model:       "doubao-seedance-1-0-pro-fast-251015",
 		Prompt:      "video",
 		AspectRatio: "16:9",
@@ -665,13 +665,16 @@ func TestVideosGenerateSendsDocsRequestShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if response.ID != "task_123" || response.Object != "task" || response.Type != TaskTypeVideoGeneration {
+		t.Fatalf("response = %#v", response)
+	}
 }
 
 func TestTaskAndMultimodalResourcePaths(t *testing.T) {
 	seen := map[string]bool{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen[r.Method+" "+r.URL.Path] = true
-		if r.URL.Path == "/api/v1/videos" && r.Header.Get("Idempotency-Key") != "idem_1" {
+		if r.URL.Path == "/api/v1/videos/generations" && r.Header.Get("Idempotency-Key") != "idem_1" {
 			t.Fatalf("missing idempotency header")
 		}
 		if r.Method == http.MethodGet && r.URL.Path == "/v1/tasks" {
@@ -699,11 +702,7 @@ func TestTaskAndMultimodalResourcePaths(t *testing.T) {
 			writeJSON(t, w, ImageTaskResponse{ID: "imgtask_1", Object: "image.task", Status: ImageTaskStatusQueued, Model: "m"})
 			return
 		}
-		if r.URL.Path == "/api/v1/videos" {
-			writeJSON(t, w, VideoGenerationResponse{ID: "job_123", PollingURL: "/api/v1/videos/job_123", Status: "pending"})
-			return
-		}
-		if strings.Contains(r.URL.Path, "/tasks/") || r.URL.Path == "/v1/tasks" || r.URL.Path == "/v1/3d/generations" {
+		if strings.Contains(r.URL.Path, "/tasks/") || r.URL.Path == "/v1/tasks" || r.URL.Path == "/api/v1/videos/generations" || r.URL.Path == "/v1/3d/generations" {
 			writeJSON(t, w, TaskResponse{ID: "task_1", Object: "task", Status: TaskStatusQueued, Progress: 0.25, Type: TaskTypeVideoGeneration, Model: "m"})
 			return
 		}
@@ -743,13 +742,65 @@ func TestTaskAndMultimodalResourcePaths(t *testing.T) {
 		"POST /api/v1/image-tasks",
 		"POST /v1/audio/speech",
 		"POST /v1/audio/transcriptions",
-		"POST /api/v1/videos",
+		"POST /api/v1/videos/generations",
 		"POST /v1/3d/generations",
 		"POST /api/v1/embeddings",
 	} {
 		if !seen[key] {
 			t.Fatalf("did not see %s; seen=%v", key, seen)
 		}
+	}
+}
+
+func TestVideosGenerateUsesKlingEntryAndDoesNotRetry(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/videos/generations" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Idempotency-Key") != "idem_kling" {
+			t.Fatalf("missing idempotency header")
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		references := payload["input"].(map[string]any)["references"].([]any)
+		if references[0].(map[string]any)["id"] != "video_1" {
+			t.Fatalf("references = %#v", references)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"error":{"code":"UPSTREAM_FAILED","message":"failed"}}`))
+	}))
+	defer server.Close()
+
+	client := New(
+		WithBaseURL(server.URL),
+		WithRetryConfig(RetryConfig{MaxRetries: 2, MinDelay: time.Millisecond}),
+	)
+	_, err := client.Videos.Generate(
+		context.Background(),
+		GenerationRequest{
+			Model:  "platform-kling-4",
+			Prompt: "animate",
+			Input: map[string]any{
+				"references": []any{map[string]any{
+					"type": "video",
+					"role": "base_video",
+					"url":  "https://assets.example.test/source.mp4",
+					"id":   "video_1",
+				}},
+			},
+		},
+		WithIdempotencyKey("idem_kling"),
+	)
+	if err == nil {
+		t.Fatal("expected provider failure")
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want 1", requests)
 	}
 }
 
