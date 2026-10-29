@@ -45,7 +45,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Println("# POST /api/v1/videos/generations")
+	fmt.Println("# POST /v1/videos/generations")
 	fmt.Println("\n# Request JSON")
 	printJSONFromBytes(capture.bodies[0])
 	fmt.Println("\n# cURL")

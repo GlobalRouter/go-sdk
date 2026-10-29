@@ -14,7 +14,7 @@ func (r *VideosResource) Generate(ctx context.Context, request GenerationRequest
 	if err := r.client.doJSON(
 		ctx,
 		http.MethodPost,
-		"/api/v1/videos/generations",
+		"/v1/videos/generations",
 		nil,
 		request,
 		&out,

@@ -136,9 +136,9 @@ client := globalrouter.New(
 
 The SDK reads `GLOBALROUTER_API_KEY` by default when `WithAPIKey` is omitted.
 
-`client.Videos.Generate` 调用 `/api/v1/videos/generations`，这是 Kling 4.0
-唯一支持的生成入口，并且 SDK 对该请求禁用自动重试。参考素材和可选 ID
-通过 `GenerationRequest.Input["references"]` 原样传递。
+`client.Videos.Generate` 调用 `/v1/videos/generations`，并且 SDK 对该请求
+禁用自动重试。Kling 4.0 的参考素材和可选 ID 通过
+`GenerationRequest.Input["references"]` 原样传递。
 `examples/kling-video` 从 `GLOBALROUTER_KLING_MODEL` 读取人工配置的模型 ID，
 只发起一次生成请求，再查询一次任务状态。
 
