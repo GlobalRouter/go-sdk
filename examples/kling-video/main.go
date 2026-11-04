@@ -29,7 +29,7 @@ func main() {
 		Input: map[string]any{
 			"duration_seconds": 10,
 			"resolution":       "1080p",
-			"aspect_ratio":     "adaptive",
+			"aspect_ratio":     "16:9",
 			"references":       []any{},
 		},
 	})
