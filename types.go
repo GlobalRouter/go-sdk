@@ -120,7 +120,9 @@ type EmbeddingsRequest struct {
 }
 
 type SuperResolutionRequest struct {
-	Resolution string `json:"resolution,omitempty"`
+	Resolution   string `json:"resolution,omitempty"`
+	TargetWidth  *int   `json:"target_width,omitempty"`
+	TargetHeight *int   `json:"target_height,omitempty"`
 }
 
 type ProviderSelection struct {
@@ -327,6 +329,7 @@ type GenerationRequest struct {
 	Duration        *int                    `json:"duration,omitempty"`
 	FrameImages     []VideoFrameImage       `json:"frame_images,omitempty"`
 	GenerateAudio   *bool                   `json:"generate_audio,omitempty"`
+	Input           map[string]any          `json:"input,omitempty"`
 	InputReferences []map[string]any        `json:"input_references,omitempty"`
 	Provider        *ProviderSelection      `json:"provider,omitempty"`
 	Resolution      string                  `json:"resolution,omitempty"`
@@ -336,13 +339,18 @@ type GenerationRequest struct {
 }
 
 type VideoGenerationResponse struct {
-	ID           string         `json:"id"`
-	PollingURL   string         `json:"polling_url"`
-	Status       string         `json:"status"`
-	Error        string         `json:"error,omitempty"`
-	GenerationID string         `json:"generation_id,omitempty"`
-	UnsignedURLs []string       `json:"unsigned_urls,omitempty"`
-	Usage        map[string]any `json:"usage,omitempty"`
+	ID           string            `json:"id"`
+	Object       string            `json:"object,omitempty"`
+	PollingURL   string            `json:"polling_url"`
+	Status       string            `json:"status"`
+	Progress     float64           `json:"progress,omitempty"`
+	Type         TaskType          `json:"type,omitempty"`
+	Model        string            `json:"model,omitempty"`
+	Links        map[string]string `json:"links,omitempty"`
+	Error        string            `json:"error,omitempty"`
+	GenerationID string            `json:"generation_id,omitempty"`
+	UnsignedURLs []string          `json:"unsigned_urls,omitempty"`
+	Usage        map[string]any    `json:"usage,omitempty"`
 }
 
 type TaskType string
