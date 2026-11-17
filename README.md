@@ -89,6 +89,7 @@ for {
 - `client.Tasks.Cancel`
 - `client.Tasks.Retry`
 - `client.Images.Generate`
+- `client.Images.GenerateContent`
 - `client.Images.CreateTask`
 - `client.Images.GetTask`
 - `client.Audio.CreateSpeech`
@@ -123,6 +124,27 @@ selects the dedicated `doubao_audio` provider and its upstream credential on
 the server. The SDK does not send a `provider` field. See
 `examples/create-seed-audio` for a complete program; set
 `GLOBALROUTER_BASE_URL` to target a non-production GlobalRouter environment.
+
+## Native Gemini Images
+
+```go
+response, err := client.Images.GenerateContent(ctx, "gemini-nano-banana-2.1",
+	globalrouter.GeminiGenerateContentRequest{
+		Contents: []globalrouter.GeminiImageContent{{
+			Role: "user",
+			Parts: []globalrouter.GeminiImagePart{{
+				Text: "A lighthouse at sunset",
+			}},
+		}},
+		GenerationConfig: &globalrouter.GeminiImageGenerationConfig{
+			ResponseModalities: []string{"TEXT", "IMAGE"},
+			ImageConfig: &globalrouter.GeminiImageConfig{
+				AspectRatio: "16:9",
+				ImageSize:   "2K",
+			},
+		},
+	})
+```
 
 ## Configuration
 

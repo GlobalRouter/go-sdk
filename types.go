@@ -128,18 +128,27 @@ type ProviderSelection struct {
 	Options    map[string]map[string]any `json:"options,omitempty"`
 }
 
+type ImageInference struct {
+	Model   string `json:"model,omitempty"`
+	Quality string `json:"quality,omitempty"`
+	Size    string `json:"size,omitempty"`
+}
+
 type ImageGenerationRequest struct {
 	Model             string                  `json:"model"`
 	Prompt            string                  `json:"prompt"`
 	AspectRatio       string                  `json:"aspect_ratio,omitempty"`
 	Background        string                  `json:"background,omitempty"`
+	Inference         *ImageInference         `json:"inference,omitempty"`
 	InputReferences   []ImageTaskReference    `json:"input_references,omitempty"`
 	N                 *int                    `json:"n,omitempty"`
 	OutputCompression *int                    `json:"output_compression,omitempty"`
 	OutputFormat      string                  `json:"output_format,omitempty"`
 	Provider          *ProviderSelection      `json:"provider,omitempty"`
 	Quality           string                  `json:"quality,omitempty"`
+	Ratio             string                  `json:"ratio,omitempty"`
 	Resolution        string                  `json:"resolution,omitempty"`
+	ResponseFormat    string                  `json:"response_format,omitempty"`
 	Seed              *int                    `json:"seed,omitempty"`
 	Size              string                  `json:"size,omitempty"`
 	Stream            *bool                   `json:"stream,omitempty"`
@@ -181,7 +190,9 @@ type ImageTaskCreateRequest struct {
 	N               *int                 `json:"n,omitempty"`
 	Size            string               `json:"size,omitempty"`
 	AspectRatio     string               `json:"aspect_ratio,omitempty"`
+	Ratio           string               `json:"ratio,omitempty"`
 	Resolution      string               `json:"resolution,omitempty"`
+	Inference       *ImageInference      `json:"inference,omitempty"`
 	Quality         string               `json:"quality,omitempty"`
 	Seed            *int                 `json:"seed,omitempty"`
 	OutputFormat    string               `json:"output_format,omitempty"`
@@ -231,6 +242,77 @@ type ImageTaskResponse struct {
 	Usage       *ImageTaskUsage     `json:"usage,omitempty"`
 	Error       *ImageTaskError     `json:"error,omitempty"`
 	Metadata    map[string]any      `json:"metadata,omitempty"`
+}
+
+type GeminiImageInlineData struct {
+	MimeType string `json:"mimeType"`
+	Data     string `json:"data"`
+}
+
+type GeminiImagePart struct {
+	Text       string                 `json:"text,omitempty"`
+	InlineData *GeminiImageInlineData `json:"inlineData,omitempty"`
+}
+
+type GeminiImageContent struct {
+	Role  string            `json:"role,omitempty"`
+	Parts []GeminiImagePart `json:"parts"`
+}
+
+type GeminiImageConfig struct {
+	AspectRatio string `json:"aspectRatio,omitempty"`
+	ImageSize   string `json:"imageSize,omitempty"`
+}
+
+type GeminiImageGenerationConfig struct {
+	ResponseModalities []string           `json:"responseModalities,omitempty"`
+	CandidateCount     *int               `json:"candidateCount,omitempty"`
+	ImageConfig        *GeminiImageConfig `json:"imageConfig,omitempty"`
+}
+
+type GeminiGenerateContentRequest struct {
+	Contents         []GeminiImageContent         `json:"contents"`
+	GenerationConfig *GeminiImageGenerationConfig `json:"generationConfig,omitempty"`
+}
+
+type GeminiImageSafetyRating struct {
+	Category    string `json:"category,omitempty"`
+	Probability string `json:"probability,omitempty"`
+	Blocked     *bool  `json:"blocked,omitempty"`
+}
+
+type GeminiImageCandidate struct {
+	Content       GeminiImageContent        `json:"content"`
+	FinishReason  string                    `json:"finishReason,omitempty"`
+	SafetyRatings []GeminiImageSafetyRating `json:"safetyRatings,omitempty"`
+}
+
+type GeminiModalityTokenCount struct {
+	Modality   string `json:"modality,omitempty"`
+	TokenCount *int   `json:"tokenCount,omitempty"`
+}
+
+type GeminiImageUsageMetadata struct {
+	PromptTokenCount        *int                       `json:"promptTokenCount,omitempty"`
+	CandidatesTokenCount    *int                       `json:"candidatesTokenCount,omitempty"`
+	TotalTokenCount         *int                       `json:"totalTokenCount,omitempty"`
+	CachedContentTokenCount *int                       `json:"cachedContentTokenCount,omitempty"`
+	ThoughtsTokenCount      *int                       `json:"thoughtsTokenCount,omitempty"`
+	PromptTokensDetails     []GeminiModalityTokenCount `json:"promptTokensDetails,omitempty"`
+	CandidatesTokensDetails []GeminiModalityTokenCount `json:"candidatesTokensDetails,omitempty"`
+}
+
+type GeminiImagePromptFeedback struct {
+	BlockReason   string                    `json:"blockReason,omitempty"`
+	SafetyRatings []GeminiImageSafetyRating `json:"safetyRatings,omitempty"`
+}
+
+type GeminiGenerateContentResponse struct {
+	Candidates     []GeminiImageCandidate     `json:"candidates"`
+	ModelVersion   string                     `json:"modelVersion"`
+	ResponseID     string                     `json:"responseId,omitempty"`
+	UsageMetadata  *GeminiImageUsageMetadata  `json:"usageMetadata,omitempty"`
+	PromptFeedback *GeminiImagePromptFeedback `json:"promptFeedback,omitempty"`
 }
 
 type AudioSpeechRequest struct {

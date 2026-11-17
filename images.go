@@ -36,3 +36,17 @@ func (r *ImagesResource) GetTask(ctx context.Context, imageTaskID string, opts .
 	}
 	return &out, nil
 }
+
+func (r *ImagesResource) GenerateContent(
+	ctx context.Context,
+	model string,
+	request GeminiGenerateContentRequest,
+	opts ...RequestOption,
+) (*GeminiGenerateContentResponse, error) {
+	var out GeminiGenerateContentResponse
+	path := "/v1beta/models/" + cleanPathValue(model) + ":generateContent"
+	if err := r.client.doJSON(ctx, http.MethodPost, path, nil, request, &out, opts...); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}

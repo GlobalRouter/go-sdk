@@ -14,6 +14,7 @@ Run from `gr_sdk_demo/go_sdk`:
 go run ./examples/create-chat-completion
 go run ./examples/create-images
 go run ./examples/create-image-task
+go run ./examples/generate-gemini-image
 go run ./examples/create-video
 go run ./examples/create-seed-audio
 ```
@@ -23,6 +24,7 @@ go run ./examples/create-seed-audio
 - `create-chat-completion/` -> `POST /api/v1/chat/completions`, via `client.Chat.Create(...)`.
 - `create-images/` -> `POST /api/v1/images`, via `client.Images.Generate(...)`.
 - `create-image-task/` -> `POST /api/v1/image-tasks`, via `client.Images.CreateTask(...)`.
+- `generate-gemini-image/` -> `POST /v1beta/models/{model}:generateContent`, via `client.Images.GenerateContent(...)`.
 - `create-video/` -> `POST /api/v1/videos`, via `client.Videos.Generate(...)`.
 - `create-seed-audio/` -> `POST /doubao/api/v3/tts/create`, via `client.Audio.CreateSeedAudio(...)`.
 
@@ -30,4 +32,4 @@ SeedAudio provider selection is server-side: the SDK sends only the
 GlobalRouter Bearer key and official request fields, while GlobalRouter routes
 the request through its dedicated `doubao_audio` provider.
 
-The examples intentionally include only the public `/api/v1` request shapes shown in the GlobalRouter docs.
+The examples include only public request shapes shown in the GlobalRouter docs.
