@@ -667,6 +667,123 @@ func TestVideosGenerateSendsDocsRequestShape(t *testing.T) {
 	}
 }
 
+func TestImageRequestsExposeRatioInferenceAndResponseFormat(t *testing.T) {
+	body, err := json.Marshal(ImageGenerationRequest{
+		Model:          "gemini-nano-banana-2.1",
+		Prompt:         "A lighthouse at sunset",
+		Ratio:          "16:9",
+		Inference:      &ImageInference{Model: "fallback-model", Quality: "high", Size: "2K"},
+		ResponseFormat: "url",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["ratio"] != "16:9" {
+		t.Fatalf("ratio = %#v", payload["ratio"])
+	}
+	if payload["response_format"] != "url" {
+		t.Fatalf("response_format = %#v", payload["response_format"])
+	}
+	inference, ok := payload["inference"].(map[string]any)
+	if !ok {
+		t.Fatalf("inference = %#v", payload["inference"])
+	}
+	if inference["model"] != "fallback-model" || inference["quality"] != "high" || inference["size"] != "2K" {
+		t.Fatalf("inference = %#v", inference)
+	}
+}
+
+func TestImagesGenerateContentUsesEncodedPathAndTypedResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if got := r.URL.EscapedPath(); got != "/v1beta/models/team%2Fgemini%20image:generateContent" {
+			t.Fatalf("escaped path = %q", got)
+		}
+
+		var request GeminiGenerateContentRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if len(request.Contents) != 1 || len(request.Contents[0].Parts) != 1 {
+			t.Fatalf("request contents = %#v", request.Contents)
+		}
+		if request.Contents[0].Parts[0].Text != "A lighthouse at sunset" {
+			t.Fatalf("prompt = %q", request.Contents[0].Parts[0].Text)
+		}
+		if request.GenerationConfig == nil || request.GenerationConfig.ImageConfig == nil {
+			t.Fatalf("generation config = %#v", request.GenerationConfig)
+		}
+		if request.GenerationConfig.ImageConfig.AspectRatio != "16:9" {
+			t.Fatalf("aspect ratio = %q", request.GenerationConfig.ImageConfig.AspectRatio)
+		}
+
+		writeJSON(t, w, GeminiGenerateContentResponse{
+			Candidates: []GeminiImageCandidate{{
+				Content: GeminiImageContent{
+					Role: "model",
+					Parts: []GeminiImagePart{
+						{Text: "Generated image"},
+						{InlineData: &GeminiImageInlineData{MimeType: "image/png", Data: "iVBORw0KGgo="}},
+					},
+				},
+				FinishReason: "STOP",
+			}},
+			ModelVersion: "gemini-nano-banana-2.1",
+			ResponseID:   "response_1",
+			UsageMetadata: &GeminiImageUsageMetadata{
+				PromptTokenCount:     Int(12),
+				CandidatesTokenCount: Int(1024),
+				TotalTokenCount:      Int(1036),
+				ThoughtsTokenCount:   Int(0),
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := New(WithBaseURL(server.URL), WithRetryConfig(RetryConfig{MaxRetries: 0}))
+	response, err := client.Images.GenerateContent(
+		context.Background(),
+		" team/gemini image ",
+		GeminiGenerateContentRequest{
+			Contents: []GeminiImageContent{{
+				Role:  "user",
+				Parts: []GeminiImagePart{{Text: "A lighthouse at sunset"}},
+			}},
+			GenerationConfig: &GeminiImageGenerationConfig{
+				ResponseModalities: []string{"TEXT", "IMAGE"},
+				ImageConfig:        &GeminiImageConfig{AspectRatio: "16:9", ImageSize: "2K"},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if response.ModelVersion != "gemini-nano-banana-2.1" {
+		t.Fatalf("model version = %q", response.ModelVersion)
+	}
+	if response.Candidates[0].FinishReason != "STOP" {
+		t.Fatalf("finish reason = %q", response.Candidates[0].FinishReason)
+	}
+	inlineData := response.Candidates[0].Content.Parts[1].InlineData
+	if inlineData == nil || inlineData.MimeType != "image/png" {
+		t.Fatalf("inline data = %#v", inlineData)
+	}
+	if response.UsageMetadata == nil || response.UsageMetadata.TotalTokenCount == nil {
+		t.Fatalf("usage metadata = %#v", response.UsageMetadata)
+	}
+	if got := *response.UsageMetadata.TotalTokenCount; got != 1036 {
+		t.Fatalf("total tokens = %d", got)
+	}
+}
+
 func TestTaskAndMultimodalResourcePaths(t *testing.T) {
 	seen := map[string]bool{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

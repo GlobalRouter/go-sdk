@@ -61,12 +61,11 @@ func main() {
 func requestBody() globalrouter.ImageTaskCreateRequest {
 	return globalrouter.ImageTaskCreateRequest{
 		Model:  "jimeng_t2i_v31",
-		Prompt: "生成 4 张电商商品图，白底，高级感",
+		Prompt: "生成一张电商商品图，白底，高级感",
 		InputReferences: []globalrouter.ImageTaskReference{{
 			Type:     "image_url",
 			ImageURL: map[string]any{"url": "https://example.com/reference.png"},
 		}},
-		N:    globalrouter.Int(4),
 		Size: "1024x1024",
 		Provider: &globalrouter.ProviderSelection{
 			ProviderID: "doubao_gr",

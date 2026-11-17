@@ -76,7 +76,6 @@ func requestBody() globalrouter.ImageGenerationRequest {
 		Quality:           "high",
 		Seed:              globalrouter.Int(42),
 		Stream:            globalrouter.Bool(false),
-		N:                 globalrouter.Int(1),
 	}
 }
 
